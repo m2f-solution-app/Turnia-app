@@ -136,7 +136,7 @@ function senaFields(n) {
     '<label>Devolver la seña si cancela con<select data-bind="n-cancel">' + [12, 24, 48].map(function (h) { return '<option value="' + h + '"' + (h === n.cancel_horas ? ' selected' : '') + '>' + h + ' h de anticipación</option>'; }).join('') + '</select></label></div>' +
     (n.sena_pct > 0 && !n.alias_pago ? '<p class="err" role="alert">Cargá tu alias: sin alias, la seña no se pide al reservar.</p>' : '<p class="hint">Cuando una clienta reserva, el horario queda retenido ese tiempo. Si no transfiere, se libera solo. Cuando te llega la plata, la confirmás con un toque en la agenda. Más adelante, esto se cobra solo con Mercado Pago.</p>');
 }
-function hrSel(sel, key, id) { var o = ''; for (var h = 6; h <= 23; h++) o += '<option value="' + (h * 60) + '"' + (h * 60 === sel ? ' selected' : '') + '>' + h + ':00</option>'; return '<select data-bind="' + key + '" data-id="' + id + '">' + o + '</select>'; }
+function hrSel(sel, key, id, k) { var o = '', list = []; for (var m = 360; m <= 1410; m += 30) list.push(m); if (list.indexOf(sel) < 0) list.push(sel); list.sort(function (x, y) { return x - y; }); list.forEach(function (m) { o += '<option value="' + m + '"' + (m === sel ? ' selected' : '') + '>' + (m === 1440 ? '24:00' : hhm(m)) + '</option>'; }); return '<select data-bind="' + key + '" data-id="' + id + '" data-k="' + (k || 0) + '">' + o + '</select>'; }
 
 /* ---------- datos ---------- */
 async function loadAll(id) {
@@ -179,15 +179,29 @@ function pagado(t) { return (S.pagos[t.id] || []).filter(function (p) { return p
 function durTxt(m) { return m >= 60 ? Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '') : m + ' min'; }
 function sched(mid) {
   var rows = S.hor.filter(function (h) { return h.miembro_id === mid; });
-  if (!rows.length) return { days: [], from: 540, to: 1140, rows: rows };
-  return { days: rows.map(function (h) { return h.dia_semana; }),
-    from: Math.min.apply(null, rows.map(function (h) { return tmin(h.desde); })),
-    to: Math.max.apply(null, rows.map(function (h) { return tmin(h.hasta); })), rows: rows };
+  if (!rows.length) return { days: [], from: 540, to: 1140, rows: rows, franjas: [[540, 1140]] };
+  var seen = {}, fr = [];
+  rows.forEach(function (h) { var key = h.desde + '-' + h.hasta; if (!seen[key]) { seen[key] = 1; fr.push([tmin(h.desde), tmin(h.hasta)]); } });
+  fr.sort(function (a, b) { return a[0] - b[0]; });
+  var days = []; rows.forEach(function (h) { if (days.indexOf(h.dia_semana) < 0) days.push(h.dia_semana); });
+  return { days: days, from: Math.min.apply(null, rows.map(function (h) { return tmin(h.desde); })), to: Math.max.apply(null, rows.map(function (h) { return tmin(h.hasta); })), rows: rows, franjas: fr };
 }
-async function setSched(mid, days, from, to) {
+async function setSched(mid, days, a, b) {
+  var fr = Array.isArray(a) ? a : [[a, b]];
   await run(sb.from('horarios').delete().eq('miembro_id', mid));
-  if (days.length) await run(sb.from('horarios').insert(days.map(function (d) { return { negocio_id: S.neg.id, miembro_id: mid, dia_semana: d, desde: mstr(from), hasta: mstr(to) }; })));
+  var ins = []; days.forEach(function (d) { fr.forEach(function (f) { ins.push({ negocio_id: S.neg.id, miembro_id: mid, dia_semana: d, desde: mstr(f[0] % 1440), hasta: f[1] >= 1440 ? '23:59' : mstr(f[1]) }); }); });
+  if (ins.length) await run(sb.from('horarios').insert(ins));
   S.hor = await run(sb.from('horarios').select('*').eq('negocio_id', S.neg.id));
+}
+function franjaTxt(fr) { return fr.map(function (f) { return hhm(f[0]) + '–' + (f[1] >= 1440 ? '24:00' : hhm(f[1])); }).join(' y '); }
+function schedBlock(m) {
+  var sc = sched(m.id), order = [1, 2, 3, 4, 5, 6, 0], ab = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+  var days = order.map(function (d) { return '<button class="chip" data-act="m-day" data-id="' + m.id + '" data-v="' + d + '" aria-label="' + DOWL[d] + '" aria-pressed="' + (sc.days.indexOf(d) > -1) + '">' + ab[d] + '</button>'; }).join('');
+  var fr = sc.franjas.slice(0, 2);
+  var rows = fr.map(function (f, i) {
+    return '<div class="franja"><span class="lbl">' + (fr.length > 1 ? 'Franja ' + (i + 1) : 'Horario') + '</span><label>Desde' + hrSel(f[0], 'm-from', m.id, i) + '</label><label>Hasta' + hrSel(f[1], 'm-to', m.id, i) + '</label>' + (i === 1 ? '<button class="chip" data-act="m-f2-del" data-id="' + m.id + '">Quitar</button>' : '') + '</div>';
+  }).join('');
+  return '<div class="days chips">' + days + '</div>' + rows + (fr.length < 2 ? '<div class="row"><button class="btn" data-act="m-f2-add" data-id="' + m.id + '">+ Agregar segunda franja (corte al mediodía)</button></div>' : '');
 }
 function memberName(id) { var m = S.mie.filter(function (x) { return x.id === id; })[0]; return m ? m.nombre : '—'; }
 function svcOf(id) { return S.srv.filter(function (x) { return x.id === id; })[0]; }
@@ -297,10 +311,8 @@ function obView() {
       (sug ? '<div class="group"><span class="lbl">Sugeridos para ' + esc(R.label.toLowerCase()) + ' (tocá para sumar)</span><div class="chips">' + sug + '</div></div>' : '') +
       '<div class="group"><span class="lbl">Cargar uno propio</span><label>Nombre<input id="sv-n" placeholder="Ej: Pedicuría spa" autocomplete="off"></label><div class="two"><label>Duración<select id="sv-min">' + durOpts(60) + '</select></label><label>Precio ($)<input id="sv-p" inputmode="numeric" placeholder="12000"></label></div><p class="err" id="sv-err" role="alert"></p><div class="row"><button class="btn" data-act="ob-svc-add">Agregar</button></div></div>';
   } else if (key === 'horarios') {
-    title = 'Tus horarios'; hint = 'Marcá los días que atendés y el horario. Los turnos online solo se ofrecen dentro de este horario.';
-    var sc = sched(own.id), order = [1, 2, 3, 4, 5, 6, 0], ab = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
-    body = '<div class="days chips">' + order.map(function (d) { return '<button class="chip" data-act="m-day" data-id="' + own.id + '" data-v="' + d + '" aria-label="' + DOWL[d] + '" aria-pressed="' + (sc.days.indexOf(d) > -1) + '">' + ab[d] + '</button>'; }).join('') + '</div>' +
-      '<div class="two"><label>Entrás' + hrSel(sc.from, 'm-from', own.id) + '</label><label>Salís' + hrSel(sc.to, 'm-to', own.id) + '</label></div>';
+    title = 'Tus horarios'; hint = 'Marcá los días que atendés y el horario. Si cortás al mediodía, agregá una segunda franja (por ejemplo de 8 a 12 y de 16 a 20). Los turnos online solo se ofrecen dentro de estos horarios.';
+    body = schedBlock(own);
   } else if (key === 'equipo') {
     title = n.tiene_sucursales ? 'Sucursales y equipo' : 'Tu equipo'; hint = 'Sumá a quienes atienden con vos. Cada uno tendrá su columna en la agenda. Podés ajustar sus días y horarios después, en Equipo.';
     var others = S.mie.filter(function (m) { return m.rol !== 'dueno'; });
@@ -366,13 +378,10 @@ function agendaView() {
   for (var h = gs; h < ge; h++) times += '<div style="top:' + ((h - gs) * PPH) + 'px">' + h + ':00</div>';
   var total = 0, count = 0;
   var cols = S.mie.map(function (m) {
-    var rows = S.hor.filter(function (x) { return x.miembro_id === m.id && x.dia_semana === dow; }), off = '';
-    if (!rows.length) off = '<div class="off" style="top:0;height:' + H + 'px"></div>';
-    else {
-      var a = Math.min.apply(null, rows.map(function (x) { return tmin(x.desde); })), z = Math.max.apply(null, rows.map(function (x) { return tmin(x.hasta); }));
-      if (a > gs * 60) off += '<div class="off" style="top:0;height:' + ((a - gs * 60) / 60 * PPH) + 'px"></div>';
-      if (z < ge * 60) off += '<div class="off" style="top:' + ((z - gs * 60) / 60 * PPH) + 'px;height:' + ((ge * 60 - z) / 60 * PPH) + 'px"></div>';
-    }
+    var rows = S.hor.filter(function (x) { return x.miembro_id === m.id && x.dia_semana === dow; }).sort(function (x, y) { return tmin(x.desde) - tmin(y.desde); }), off = '';
+    var cur = gs * 60, seg = function (from, to) { if (to > from) off += '<div class="off" style="top:' + ((from - gs * 60) / 60 * PPH) + 'px;height:' + ((to - from) / 60 * PPH) + 'px"></div>'; };
+    rows.forEach(function (x) { seg(cur, Math.min(tmin(x.desde), ge * 60)); cur = Math.max(cur, tmin(x.hasta)); });
+    seg(cur, ge * 60);
     var ap = S.tur.filter(function (t) { return t.miembro_id === m.id; }).map(function (t) {
       var l = utcToLocal(t.inicio, tz), hgt = t.duracion_min / 60 * PPH - 2, sv = svcOf(t.servicio_id), cls = t.estado_pago === 'sena' ? 'seña' : t.estado_pago;
       total += +t.precio; count++;
@@ -381,13 +390,39 @@ function agendaView() {
     }).join('');
     return '<div class="ag-c" data-mid="' + m.id + '" data-gs="' + gs + '" style="height:' + H + 'px">' + off + ap + '</div>';
   }).join('');
-  var heads = S.mie.map(function (m) { var sc = sched(m.id), w = sc.days.indexOf(dow) > -1; return '<div class="ag-h c' + m.color + '"><i class="pdot"></i>' + esc(m.nombre) + '<small>' + (w ? hhm(sc.from) + ' a ' + hhm(sc.to) : 'No trabaja') + '</small></div>'; }).join('');
+  var heads = S.mie.map(function (m) { var sc = sched(m.id), w = sc.days.indexOf(dow) > -1; return '<div class="ag-h c' + m.color + '"><i class="pdot"></i>' + esc(m.nombre) + '<small>' + (w ? franjaTxt(S.hor.filter(function (x) { return x.miembro_id === m.id && x.dia_semana === dow; }).map(function (x) { return [tmin(x.desde), tmin(x.hasta)]; }).sort(function (p, q) { return p[0] - q[0]; })) : 'No trabaja') + '</small></div>'; }).join('');
   return '<div class="head"><h2>Agenda</h2><button class="btn primary" data-act="new">+ Nuevo turno</button></div>' + alertsHtml() + chips +
     '<p class="muted small">' + dlong(S.ds) + ' · ' + count + ' turnos · ' + money(total) + ' previstos. Tocá un hueco libre para cargar un turno.</p>' +
     '<div class="legend"><span><i class="dot pagado"></i>Cobrado</span><span><i class="dot seña"></i>Con seña</span><span><i class="dot pendiente"></i>Sin cobrar</span><span>Rayado: fuera de horario</span></div>' +
     '<div class="agenda"><div class="ag" style="--n:' + S.mie.length + '"><div class="ag-h"></div>' + heads + '<div class="ag-t" style="height:' + H + 'px">' + times + '</div>' + cols + '</div></div>';
 }
 
+var MODS = { comision: 'Comisión', alquiler: 'Alquiler del puesto', sueldo: 'Sueldo fijo' };
+var PERS = { dia: 'por día de trabajo', semana: 'por semana', mes: 'por mes' };
+function acuerdoBlock(m, cm) {
+  var mod = m.modalidad || 'comision', mo = '', pe = '';
+  Object.keys(MODS).forEach(function (k) { mo += '<option value="' + k + '"' + (k === mod ? ' selected' : '') + '>' + MODS[k] + '</option>'; });
+  Object.keys(PERS).forEach(function (k) { pe += '<option value="' + k + '"' + (k === (m.periodo || 'dia') ? ' selected' : '') + '>' + PERS[k] + '</option>'; });
+  var h = '<div class="acuerdo"><label>Acuerdo con el local<select data-bind="m-mod" data-id="' + m.id + '">' + mo + '</select></label>';
+  if (mod === 'comision') h += '<label>Se queda con<select data-bind="m-comm" data-id="' + m.id + '">' + cm + '</select></label><p class="muted small">El resto de lo que factura es del local.</p>';
+  else {
+    var sv = S.srv.map(function (x) { return '<option value="' + x.id + '">' + esc(x.nombre) + ' (' + money(x.precio) + ')</option>'; }).join('');
+    h += '<div class="two"><label>' + (mod === 'alquiler' ? 'Paga al local' : 'Cobra del local') + ' ($)<input inputmode="numeric" data-bind="m-monto" data-id="' + m.id + '" value="' + (+m.monto_fijo || '') + '" placeholder="16000"></label>' +
+      '<label>Período<select data-bind="m-per" data-id="' + m.id + '">' + pe + '</select></label></div>' +
+      (S.srv.length ? '<div class="calc"><span class="muted small">Calcularlo en servicios:</span><select id="calc-n-' + m.id + '"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option></select><select id="calc-s-' + m.id + '">' + sv + '</select><button class="chip" data-act="m-calc" data-id="' + m.id + '">Usar este monto</button></div>' : '') +
+      '<p class="muted small">' + (mod === 'alquiler' ? 'Se queda con todo lo que factura; el local cobra el alquiler.' : 'El local se queda con lo que factura y le paga este sueldo.') + (m.periodo === 'dia' || !m.periodo ? ' Cuenta los días que figura trabajando en su horario.' : '') + '</p>';
+  }
+  return h + '</div>';
+}
+function dimOf(ds) { var a = ds.split('-'); return new Date(Date.UTC(+a[0], +a[1], 0)).getUTCDate(); }
+/* Monto fijo del período visible: por día = días de horario transcurridos; semana/mes = proporcional a los días transcurridos */
+function fijoPeriodo(m, r, today) {
+  var monto = +m.monto_fijo || 0, tot = 0, days = sched(m.id).days;
+  for (var d = r.s; d < r.e && d <= today; d = addDays(d, 1)) {
+    if (m.periodo === 'semana') tot += monto / 7; else if (m.periodo === 'mes') tot += monto / dimOf(d); else if (days.indexOf(dowOf(d)) > -1) tot += monto;
+  }
+  return Math.round(tot);
+}
 function equipoView() {
   var order = [1, 2, 3, 4, 5, 6, 0], ab = ['D', 'L', 'M', 'M', 'J', 'V', 'S'], RL = { dueno: 'Dueño o dueña', encargado: 'Encargado', profesional: 'Profesional' };
   var hrs = function (sel, key, id) { var o = ''; for (var h = 6; h <= 23; h++) o += '<option value="' + (h * 60) + '"' + (h * 60 === sel ? ' selected' : '') + '>' + h + ':00</option>'; return '<select data-bind="' + key + '" data-id="' + id + '">' + o + '</select>'; };
@@ -398,8 +433,8 @@ function equipoView() {
     var sucSel = (S.neg.tiene_sucursales && S.suc.length > 1) ? '<label>Sucursal<select data-bind="m-suc" data-id="' + m.id + '">' + S.suc.map(function (s) { return '<option value="' + s.id + '"' + (s.id === m.sucursal_id ? ' selected' : '') + '>' + esc(s.nombre) + '</option>'; }).join('') + '</select></label>' : '';
     return '<div class="card staff c' + m.color + '"><div class="top2"><span class="tag">' + RL[m.rol] + '</span>' + chip('m-pub', 'Atiende por el link', m.atiende_publico, 'data-id="' + m.id + '"') + '</div>' +
       '<label>Nombre<input data-bind="m-nombre" data-id="' + m.id + '" value="' + esc(m.nombre) + '"></label>' +
-      '<div class="days chips">' + days + '</div>' +
-      '<div class="two"><label>Entra' + hrs(sc.from, 'm-from', m.id) + '</label><label>Sale' + hrs(sc.to, 'm-to', m.id) + '</label><label>Comisión<select data-bind="m-comm" data-id="' + m.id + '">' + cm + '</select></label>' + sucSel + '</div>' +
+      schedBlock(m) +
+      acuerdoBlock(m, cm) + (sucSel ? '<div class="two">' + sucSel + '</div>' : '') +
       (m.rol !== 'dueno' ? '<div class="row"><button class="btn danger" data-act="m-del" data-id="' + m.id + '">Quitar del equipo</button></div>' : '') + '</div>';
   }).join('');
   return '<div class="head"><h2>Equipo</h2><button class="btn primary" data-act="m-add">+ Profesional</button></div>' +
@@ -540,16 +575,19 @@ function finanzasView() {
   for (d = r.cs; d < r.ce; d = addDays(d, 1)) { days.push(d); labels.push(f.range === 'mes' ? String(+d.split('-')[2]) : DOWS[dowOf(d)] + ' ' + (+d.split('-')[2])); }
   vals = days.map(function (dd) { return firm.filter(function (t) { return dsOf(t) === dd; }).reduce(function (a, t) { return a + (+t.precio); }, 0); });
   var sel = f.range === 'dia' ? days.indexOf(r.s) : null;
-  var com = 0, comCob = 0;
+  var com = 0, comCob = 0, factAlq = 0, cobAlq = 0, alqTot = 0, sueTot = 0;
   var rows = S.mie.map(function (m) {
-    var k = st(inR.filter(function (t) { return t.miembro_id === m.id; })), c = Math.round(k.fact * m.comision_pct / 100); com += c; comCob += Math.round(k.cob * m.comision_pct / 100);
-    return '<tr><td><i class="pdot c' + m.color + '"></i>' + esc(m.nombre) + '</td><td>' + k.n + '</td><td>' + money(k.fact) + '</td><td>' + money(c) + '</td><td>' + money(k.fact - c) + '</td></tr>';
+    var k = st(inR.filter(function (t) { return t.miembro_id === m.id; })), mod = m.modalidad || 'comision', pro, loc, nota = '';
+    if (mod === 'alquiler') { var al = fijoPeriodo(m, r, today); factAlq += k.fact; cobAlq += k.cob; alqTot += al; pro = k.fact - al; loc = al; nota = 'Alquiler ' + money(m.monto_fijo) + ' ' + PERS[m.periodo || 'dia']; }
+    else if (mod === 'sueldo') { var su = fijoPeriodo(m, r, today); sueTot += su; pro = su; loc = k.fact - su; nota = 'Sueldo ' + money(m.monto_fijo) + ' ' + PERS[m.periodo || 'dia']; }
+    else { pro = Math.round(k.fact * m.comision_pct / 100); loc = k.fact - pro; com += pro; comCob += Math.round(k.cob * m.comision_pct / 100); nota = 'Comisión ' + m.comision_pct + '%'; }
+    return '<tr><td><i class="pdot c' + m.color + '"></i>' + esc(m.nombre) + '<br><small class="muted">' + nota + '</small></td><td>' + k.n + '</td><td>' + money(k.fact) + '</td><td>' + money(pro) + '</td><td>' + money(loc) + '</td></tr>';
   }).join('');
   var porMedio = Object.keys(MEDIOS).map(function (k) {
     var tot = f.pag.filter(function (p) { return p.medio === k && inR.some(function (t) { return t.id === p.turno_id; }); }).reduce(function (a, p) { return a + (+p.monto); }, 0);
     return '<tr><td>' + MEDIOS[k] + '</td><td>' + money(tot) + '</td></tr>';
   }).join('');
-  var gt = f.gas.reduce(function (a, g) { return a + (+g.monto); }, 0), neta = K.fact - com - gt, netaCob = K.cob - comCob - gt;
+  var gt = f.gas.reduce(function (a, g) { return a + (+g.monto); }, 0), neta = K.fact - com - sueTot - factAlq + alqTot - gt, netaCob = K.cob - comCob - sueTot - cobAlq + alqTot - gt;
   var sedes = '';
   if (S.neg.tiene_sucursales && S.suc.length > 1) {
     sedes = '<div class="card"><h3>Comparar sucursales</h3><div class="scroll"><table class="tbl"><thead><tr><th>Sede</th><th>Turnos</th><th>Factura</th><th>Cobrado</th></tr></thead><tbody>' + S.suc.map(function (sc) {
@@ -563,13 +601,13 @@ function finanzasView() {
   var byCat = Object.keys(CATS).map(function (k) { return [k, f.gas.filter(function (g) { return (g.categoria || 'otros') === k; }).reduce(function (a, g) { return a + (+g.monto); }, 0)]; }).filter(function (x) { return x[1] > 0; });
   var catHtml = byCat.length ? '<h4>En qué se va la plata</h4><div class="scroll"><table class="tbl"><tbody>' + byCat.map(function (x) { return '<tr><td>' + CATS[x[0]] + '</td><td>' + money(x[1]) + '</td><td class="muted">' + Math.round(x[1] / gt * 100) + '%</td></tr>'; }).join('') + '</tbody></table></div>' : '';
   var out = '<div class="card staff"><h3>Ganancia neta ' + (f.range === 'dia' ? 'del día' : f.range === 'semana' ? 'de la semana' : 'del mes') + '</h3><div class="scroll"><table class="tbl"><tbody>' +
-    '<tr><td>Facturación</td><td>' + money(K.fact) + '</td><td></td></tr><tr><td>Comisiones del equipo</td><td>− ' + money(com) + '</td><td></td></tr>' + gl +
+    '<tr><td>Facturación</td><td>' + money(K.fact) + '</td><td></td></tr>' + (com ? '<tr><td>Comisiones del equipo</td><td>− ' + money(com) + '</td><td></td></tr>' : '') + (sueTot ? '<tr><td>Sueldos fijos</td><td>− ' + money(sueTot) + '</td><td></td></tr>' : '') + (factAlq ? '<tr><td>Facturado por quienes alquilan <small class="muted">es de ellos</small></td><td>− ' + money(factAlq) + '</td><td></td></tr><tr><td>Alquileres cobrados</td><td>+ ' + money(alqTot) + '</td><td></td></tr>' : '') + gl +
     '<tr><td><b>Ganancia neta</b> <small class="muted">sobre lo facturado</small></td><td><span class="res ' + (neta >= 0 ? 'good' : 'bad') + '">' + money(neta) + '</span></td><td></td></tr>' +
     '<tr><td><b>Ganancia neta cobrada</b> <small class="muted">solo con lo que ya entró</small></td><td><span class="res ' + (netaCob >= 0 ? 'good' : 'bad') + '">' + money(netaCob) + '</span></td><td></td></tr></tbody></table></div>' + catHtml +
     '<h4>Cargar un gasto</h4><div class="two" style="grid-template-columns:2fr 1fr;align-items:end"><label>Concepto<input id="g-d" placeholder="Ej: Esmaltes y limas" autocomplete="off"></label><label>Monto<input id="g-a" inputmode="numeric" placeholder="15000"></label></div>' +
     '<div class="two" style="grid-template-columns:2fr auto;align-items:end"><label>Categoría<select id="g-c">' + Object.keys(CATS).map(function (k) { return '<option value="' + k + '">' + CATS[k] + '</option>'; }).join('') + '</select></label><button class="btn primary" data-act="g-add">Agregar</button></div><p class="err" id="g-err" role="alert"></p></div>';
   return head + nav + kp + '<div class="card"><h3>Facturación por día</h3>' + finChart(vals, labels, sel) + '</div>' +
-    '<div class="card"><h3>Por profesional</h3><div class="scroll"><table class="tbl"><thead><tr><th>Nombre</th><th>Turnos</th><th>Factura</th><th>Comisión</th><th>Para el local</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>' +
+    '<div class="card"><h3>Por profesional</h3><div class="scroll"><table class="tbl"><thead><tr><th>Nombre</th><th>Turnos</th><th>Factura</th><th>Para el profesional</th><th>Para el local</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>' +
     '<div class="card"><h3>Cómo cobraste</h3><div class="scroll"><table class="tbl"><tbody>' + porMedio + '<tr><td>Por cobrar</td><td>' + money(K.por) + '</td></tr></tbody></table></div>' + holds + devs + '</div>' + sedes + out;
 }
 
@@ -887,11 +925,19 @@ document.addEventListener('click', async function (e) {
         await setSched(nuevo.id, [1, 2, 3, 4, 5, 6], 540, 1140);
         await loadAll(S.neg.id); toast('Profesional agregado: cambiale el nombre'); break;
       }
+      case 'm-f2-add': {
+        var sa = sched(id), f1 = sa.franjas[0], ini = Math.max(f1[1] + 120, 960), fin = Math.min(ini + 240, 1410);
+        if (f1[1] + 60 > 1380) { toast('No hay lugar para una segunda franja después de ' + hhm(f1[1])); break; }
+        if (ini >= 1380) { ini = f1[1] + 60; fin = Math.min(ini + 120, 1410); }
+        await setSched(id, sa.days.length ? sa.days : [1, 2, 3, 4, 5, 6], [f1, [ini, fin]]); break;
+      }
+      case 'm-f2-del': { var sd = sched(id); await setSched(id, sd.days, [sd.franjas[0]]); break; }
       case 'm-day': {
         var sc = sched(id), d = +v, days = sc.days.slice(), k = days.indexOf(d);
         if (k > -1) days.splice(k, 1); else days.push(d);
-        await setSched(id, days, sc.from, sc.to); break;
+        await setSched(id, days, sc.franjas); break;
       }
+      case 'm-calc': { var cn = +document.getElementById('calc-n-' + id).value, cs = S.srv.filter(function (x) { return x.id === document.getElementById('calc-s-' + id).value; })[0]; if (cs) { await run(sb.from('miembros').update({ monto_fijo: Math.round(cn * +cs.precio) }).eq('id', id)); await loadAll(S.neg.id); toast(cn + ' × ' + cs.nombre + ' = ' + money(cn * +cs.precio)); } break; }
       case 'm-pub': { var mm = S.mie.filter(function (x) { return x.id === id; })[0]; await run(sb.from('miembros').update({ atiende_publico: !mm.atiende_publico }).eq('id', id)); await loadAll(S.neg.id); break; }
       case 'm-del': await run(sb.from('miembros').update({ activo: false }).eq('id', id)); await loadAll(S.neg.id); await loadTur(); toast('Quitado del equipo'); break;
       case 's-add': {
@@ -967,11 +1013,16 @@ document.addEventListener('change', async function (e) {
   try {
     if (k === 'm-nombre') { var nn = v.trim(); if (!nn) { toast('El nombre no puede quedar vacío'); render(); return; } await run(sb.from('miembros').update({ nombre: nn }).eq('id', id)); await loadAll(S.neg.id); }
     else if (k === 'm-suc') { await run(sb.from('miembros').update({ sucursal_id: v }).eq('id', id)); await loadAll(S.neg.id); }
+    else if (k === 'm-mod') { await run(sb.from('miembros').update({ modalidad: v }).eq('id', id)); await loadAll(S.neg.id); }
+    else if (k === 'm-monto') { var mv = Math.round(+String(v).replace(/[^0-9.]/g, '')) || 0; await run(sb.from('miembros').update({ monto_fijo: mv }).eq('id', id)); await loadAll(S.neg.id); }
+    else if (k === 'm-per') { await run(sb.from('miembros').update({ periodo: v }).eq('id', id)); await loadAll(S.neg.id); }
     else if (k === 'm-comm') { await run(sb.from('miembros').update({ comision_pct: +v }).eq('id', id)); await loadAll(S.neg.id); }
     else if (k === 'm-from' || k === 'm-to') {
-      var sc = sched(id), from = k === 'm-from' ? +v : sc.from, to = k === 'm-to' ? +v : sc.to;
-      if (to <= from) { toast('La hora de salida tiene que ser posterior a la de entrada'); render(); return; }
-      await setSched(id, sc.days, from, to);
+      var sc = sched(id), fi = +t.dataset.k || 0, fr = sc.franjas.map(function (x) { return x.slice(); });
+      fr[fi][k === 'm-from' ? 0 : 1] = +v;
+      if (fr[fi][1] <= fr[fi][0]) { toast('La hora de salida tiene que ser posterior a la de entrada'); render(); return; }
+      if (fr[1] && fr[1][0] < fr[0][1]) { toast('La segunda franja tiene que empezar después de que termine la primera'); render(); return; }
+      await setSched(id, sc.days, fr);
     }
     else if (k === 's-n') { var sn = v.trim(); if (!sn) { toast('El nombre no puede quedar vacío'); render(); return; } await run(sb.from('servicios').update({ nombre: sn }).eq('id', id)); await loadAll(S.neg.id); }
     else if (k === 's-min') { await run(sb.from('servicios').update({ duracion_min: +v }).eq('id', id)); await loadAll(S.neg.id); }
