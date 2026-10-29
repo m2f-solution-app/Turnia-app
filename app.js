@@ -126,6 +126,8 @@ async function subirLogo(blob) {
   await run(sb.from('negocios').update({ logo_url: url }).eq('id', S.neg.id));
   S.neg.logo_url = url;
 }
+var DURS = [10, 15, 20, 25, 30, 40, 45, 50, 60, 75, 90, 105, 120, 135, 150, 180, 210, 240];
+function durOpts(sel) { var l = DURS.slice(); if (sel && l.indexOf(sel) < 0) { l.push(sel); l.sort(function (a, b) { return a - b; }); } return l.map(function (m) { return '<option value="' + m + '"' + (m === sel ? ' selected' : '') + '>' + m + ' min</option>'; }).join(''); }
 function hrSel(sel, key, id) { var o = ''; for (var h = 6; h <= 23; h++) o += '<option value="' + (h * 60) + '"' + (h * 60 === sel ? ' selected' : '') + '>' + h + ':00</option>'; return '<select data-bind="' + key + '" data-id="' + id + '">' + o + '</select>'; }
 
 /* ---------- datos ---------- */
@@ -264,10 +266,9 @@ function obView() {
     title = 'Tus servicios'; hint = 'Es lo que tus clientes van a poder elegir. La duración ordena la agenda y el precio alimenta las finanzas.';
     var have = S.srv.map(function (x) { return x.nombre; });
     var sug = R.servicios.map(function (x, i) { return have.indexOf(x[0]) > -1 ? '' : chip('ob-sug', esc(x[0]) + ' · ' + x[1] + ' min · ' + money(x[2]), false, 'data-i="' + i + '"'); }).join('');
-    var mins = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180];
-    body = (S.srv.length ? '<ul class="oblist">' + S.srv.map(function (x) { return '<li><span><b>' + esc(x.nombre) + '</b> · ' + x.duracion_min + ' min · ' + money(x.precio) + '</span><button class="chip" data-act="ob-svc-del" data-id="' + x.id + '" aria-label="Quitar ' + esc(x.nombre) + '">Quitar</button></li>'; }).join('') + '</ul>' : '<p class="muted">Todavía no cargaste ninguno.</p>') +
+    body = (S.srv.length ? '<p class="small muted">Podés ajustar el nombre, la duración y el precio de cada uno: no todos demoran lo mismo.</p><div class="oblist">' + S.srv.map(function (x) { return '<div class="obsvc"><label>Nombre<input data-bind="s-n" data-id="' + x.id + '" value="' + esc(x.nombre) + '"></label><div class="two"><label>Duración<select data-bind="s-min" data-id="' + x.id + '">' + durOpts(x.duracion_min) + '</select></label><label>Precio ($)<input data-bind="s-price" data-id="' + x.id + '" inputmode="numeric" value="' + Math.round(x.precio) + '"></label></div><div class="row"><button class="chip" data-act="ob-svc-del" data-id="' + x.id + '">Quitar</button></div></div>'; }).join('') + '</div>' : '<p class="muted">Todavía no cargaste ninguno.</p>') +
       (sug ? '<div class="group"><span class="lbl">Sugeridos para ' + esc(R.label.toLowerCase()) + ' (tocá para sumar)</span><div class="chips">' + sug + '</div></div>' : '') +
-      '<div class="group"><span class="lbl">Cargar uno propio</span><label>Nombre<input id="sv-n" placeholder="Ej: Pedicuría spa" autocomplete="off"></label><div class="two"><label>Duración<select id="sv-min">' + mins.map(function (m) { return '<option value="' + m + '"' + (m === 60 ? ' selected' : '') + '>' + m + ' min</option>'; }).join('') + '</select></label><label>Precio ($)<input id="sv-p" inputmode="numeric" placeholder="12000"></label></div><p class="err" id="sv-err" role="alert"></p><div class="row"><button class="btn" data-act="ob-svc-add">Agregar</button></div></div>';
+      '<div class="group"><span class="lbl">Cargar uno propio</span><label>Nombre<input id="sv-n" placeholder="Ej: Pedicuría spa" autocomplete="off"></label><div class="two"><label>Duración<select id="sv-min">' + durOpts(60) + '</select></label><label>Precio ($)<input id="sv-p" inputmode="numeric" placeholder="12000"></label></div><p class="err" id="sv-err" role="alert"></p><div class="row"><button class="btn" data-act="ob-svc-add">Agregar</button></div></div>';
   } else if (key === 'horarios') {
     title = 'Tus horarios'; hint = 'Marcá los días que atendés y el horario. Los turnos online solo se ofrecen dentro de este horario.';
     var sc = sched(own.id), order = [1, 2, 3, 4, 5, 6, 0], ab = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
@@ -368,8 +369,7 @@ function equipoView() {
 }
 
 function serviciosView() {
-  var mins = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180];
-  var opts = function (sel) { return mins.map(function (m) { return '<option value="' + m + '"' + (m === sel ? ' selected' : '') + '>' + m + ' min</option>'; }).join(''); };
+  var opts = durOpts;
   var cards = S.srv.map(function (x) {
     var who = whoDoes(x.id), on = x.visible;
     var chips = S.mie.map(function (m) { return chip('s-who', esc(m.nombre), who.indexOf(m.id) > -1, 'data-sid="' + x.id + '" data-id="' + m.id + '"'); }).join('');
@@ -410,6 +410,7 @@ function sheetView() {
     inner = '<h3>Nuevo turno</h3><p class="muted small">' + dlong(S.ds) + '</p>' +
       '<label>Cliente<input id="f-client" placeholder="Nombre y apellido" autocomplete="off"></label>' +
       '<label>Servicio<select id="f-svc">' + S.srv.map(function (x) { return '<option value="' + x.id + '">' + esc(x.nombre) + ' · ' + x.duracion_min + ' min · ' + money(x.precio) + '</option>'; }).join('') + '</select></label>' +
+      '<label>Duración<select id="f-dur">' + durOpts(S.srv[0].duracion_min) + '</select></label>' +
       '<div class="two"><label>Profesional<select id="f-mie">' + S.mie.map(function (m) { return '<option value="' + m.id + '"' + (m.id === sh.mid ? ' selected' : '') + '>' + esc(m.nombre) + '</option>'; }).join('') + '</select></label><label>Hora<select id="f-time">' + to + '</select></label></div>' +
       '<p class="err" id="f-err" role="alert"></p><div class="row"><button class="btn primary" data-act="sheet-save">Guardar turno</button><button class="btn" data-act="sheet-close">Cancelar</button></div>';
   } else {
@@ -623,7 +624,7 @@ document.addEventListener('click', async function (e) {
         var nm = $('#f-client').value.trim(), err = $('#f-err'), sv = svcOf($('#f-svc').value), m = S.mie.filter(function (x) { return x.id === $('#f-mie').value; })[0], min = +$('#f-time').value;
         if (!nm) { err.textContent = 'Escribí el nombre del cliente.'; return; }
         try {
-          await run(sb.from('turnos').insert({ negocio_id: S.neg.id, sucursal_id: m.sucursal_id, miembro_id: m.id, servicio_id: sv.id, cliente_nombre: nm, inicio: zonedToUtc(S.ds, min, TZ()).toISOString(), duracion_min: sv.duracion_min, precio: sv.precio, origen: 'panel' }));
+          await run(sb.from('turnos').insert({ negocio_id: S.neg.id, sucursal_id: m.sucursal_id, miembro_id: m.id, servicio_id: sv.id, cliente_nombre: nm, inicio: zonedToUtc(S.ds, min, TZ()).toISOString(), duracion_min: +$('#f-dur').value || sv.duracion_min, precio: sv.precio, origen: 'panel' }));
         } catch (er) { err.textContent = errMsg(er); return; }
         S.sheet = null; await loadTur(); toast('Turno guardado'); break;
       }
@@ -690,6 +691,7 @@ document.addEventListener('click', async function (e) {
 });
 
 document.addEventListener('change', async function (e) {
+  if (e.target.id === 'f-svc') { var sv0 = svcOf(e.target.value), fd = $('#f-dur'); if (sv0 && fd) fd.innerHTML = durOpts(sv0.duracion_min); return; }
   if (e.target.id === 'logo-file') {
     var f = e.target.files && e.target.files[0]; if (!f) return;
     try {

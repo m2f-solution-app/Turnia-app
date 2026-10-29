@@ -232,3 +232,5 @@ main{display:grid;gap:16px;min-width:0;align-content:start}
 .tour b{display:block}
 .card.note{margin-top:12px;background:var(--surface2)}
 .logo.turnia{object-fit:contain;border-radius:0;background:none}
+.obsvc{display:grid;gap:8px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.oblist{display:grid;gap:10px}
