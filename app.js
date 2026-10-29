@@ -8,7 +8,7 @@ try { sb = window.supabase.createClient(CFG.url, CFG.key); } catch (e) { sb = nu
 
 var $ = function (s) { return document.querySelector(s); };
 var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
-var money = function (n) { return '$ ' + String(Math.round(+n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); };
+var money = function (n) { return '$\u00a0' + String(Math.round(+n || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); };
 var DOWL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 var DOWS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 var DEFAULT_TZ = 'America/Argentina/Buenos_Aires';
@@ -84,7 +84,7 @@ function tmin(t) { var a = String(t).split(':'); return (+a[0]) * 60 + (+a[1]); 
 function slugify(s) { return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60); }
 
 /* ---------- estado ---------- */
-var S = { route: 'boot', rubro: 'manicura', tiene: false, authMode: 'signup', authMsg: '', af: { name: '', mail: '', pass: '' }, authBusy: false, cf: { n: '', s: '', edited: false, err: '', logoBlob: null, logoPrev: '' },
+var S = { items: {}, pagos: {}, route: 'boot', rubro: 'manicura', tiene: false, authMode: 'signup', authMsg: '', af: { name: '', mail: '', pass: '' }, authBusy: false, cf: { n: '', s: '', edited: false, err: '', logoBlob: null, logoPrev: '' },
   seed: true, ob: { step: 0 }, user: null, neg: null, suc: [], mie: [], hor: [], srv: [], sm: [], tab: 'agenda', ds: null, win: 0, tur: [], sheet: null, acct: false,
   P: null, pb: null, seen: false, seenR: false };
 
@@ -149,7 +149,18 @@ async function loadTur() {
   if (!S.ds) S.ds = todayDs(TZ());
   var tz = TZ(), a = zonedToUtc(S.ds, 0, tz).toISOString(), b = zonedToUtc(addDays(S.ds, 1), 0, tz).toISOString();
   S.tur = await run(sb.from('turnos').select('*').eq('negocio_id', S.neg.id).gte('inicio', a).lt('inicio', b).neq('estado', 'cancelado').order('inicio'));
+  S.items = {}; S.pagos = {};
+  var ids = S.tur.map(function (x) { return x.id; });
+  if (ids.length) {
+    var r = await Promise.all([run(sb.from('turno_servicios').select('*').in('turno_id', ids).order('orden')), run(sb.from('pagos').select('*').in('turno_id', ids).order('creado_en'))]);
+    r[0].forEach(function (x) { (S.items[x.turno_id] = S.items[x.turno_id] || []).push(x); });
+    r[1].forEach(function (x) { (S.pagos[x.turno_id] = S.pagos[x.turno_id] || []).push(x); });
+  }
 }
+var MEDIOS = { efectivo: 'Efectivo', mercadopago: 'QR Mercado Pago', transferencia: 'Transferencia' };
+function turnoNombres(t) { var it = S.items[t.id]; if (it && it.length) return it.map(function (x) { return x.nombre; }).join(' + '); var sv = svcOf(t.servicio_id); return sv ? sv.nombre : 'Servicio'; }
+function pagado(t) { return (S.pagos[t.id] || []).filter(function (p) { return p.estado === 'aprobado'; }).reduce(function (a, p) { return a + (+p.monto); }, 0); }
+function durTxt(m) { return m >= 60 ? Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '') : m + ' min'; }
 function sched(mid) {
   var rows = S.hor.filter(function (h) { return h.miembro_id === mid; });
   if (!rows.length) return { days: [], from: 540, to: 1140, rows: rows };
@@ -339,7 +350,7 @@ function agendaView() {
       var l = utcToLocal(t.inicio, tz), hgt = t.duracion_min / 60 * PPH - 2, sv = svcOf(t.servicio_id), cls = t.estado_pago === 'sena' ? 'seña' : t.estado_pago;
       total += +t.precio; count++;
       return '<button class="appt c' + m.color + '" data-act="appt" data-v="' + t.id + '" style="top:' + ((l.min - gs * 60) / 60 * PPH + 1) + 'px;height:' + hgt + 'px">' +
-        '<b><i class="dot ' + cls + '"></i>' + esc(t.cliente_nombre) + '</b>' + (hgt > 38 ? '<span>' + esc(sv ? sv.nombre : 'Servicio') + ' · ' + hhm(l.min) + '</span>' : '') + '</button>';
+        '<b><i class="dot ' + cls + '"></i>' + esc(t.cliente_nombre) + '</b>' + (hgt > 38 ? '<span>' + esc(turnoNombres(t)) + ' · ' + hhm(l.min) + '</span>' : '') + '</button>';
     }).join('');
     return '<div class="ag-c" data-mid="' + m.id + '" data-gs="' + gs + '" style="height:' + H + 'px">' + off + ap + '</div>';
   }).join('');
@@ -407,44 +418,57 @@ function sheetView() {
   if (sh.type === 'new') {
     var gs = 9, ge = 19; S.mie.forEach(function (m) { var sc = sched(m.id); if (sc.rows.length) { gs = Math.min(gs, Math.floor(sc.from / 60)); ge = Math.max(ge, Math.ceil(sc.to / 60)); } });
     var to = ''; for (var t = gs * 60; t < ge * 60; t += 30) to += '<option value="' + t + '"' + (t === sh.min ? ' selected' : '') + '>' + hhm(t) + '</option>';
+    if (!sh.svcs) { sh.svcs = [S.srv[0].id]; sh.dur = S.srv[0].duracion_min; sh.price = Math.round(S.srv[0].precio); sh.client = ''; }
     inner = '<h3>Nuevo turno</h3><p class="muted small">' + dlong(S.ds) + '</p>' +
-      '<label>Cliente<input id="f-client" placeholder="Nombre y apellido" autocomplete="off"></label>' +
-      '<label>Servicio<select id="f-svc">' + S.srv.map(function (x) { return '<option value="' + x.id + '">' + esc(x.nombre) + ' · ' + x.duracion_min + ' min · ' + money(x.precio) + '</option>'; }).join('') + '</select></label>' +
-      '<label>Duración<select id="f-dur">' + durOpts(S.srv[0].duracion_min) + '</select></label>' +
+      '<label>Cliente<input id="f-client" placeholder="Nombre y apellido" autocomplete="off" value="' + esc(sh.client) + '"></label>' +
+      '<div class="group"><span class="lbl">Servicios (podés elegir varios)</span><div class="chips">' + S.srv.map(function (x) { return chip('sh-svc', esc(x.nombre), sh.svcs.indexOf(x.id) > -1, 'data-id="' + x.id + '"'); }).join('') + '</div></div>' +
+      '<div class="two"><label>Duración total<select id="f-dur">' + durOpts(sh.dur) + '</select></label><label>Precio total ($)<input id="f-price" inputmode="numeric" value="' + sh.price + '"></label></div>' +
       '<div class="two"><label>Profesional<select id="f-mie">' + S.mie.map(function (m) { return '<option value="' + m.id + '"' + (m.id === sh.mid ? ' selected' : '') + '>' + esc(m.nombre) + '</option>'; }).join('') + '</select></label><label>Hora<select id="f-time">' + to + '</select></label></div>' +
       '<p class="err" id="f-err" role="alert"></p><div class="row"><button class="btn primary" data-act="sheet-save">Guardar turno</button><button class="btn" data-act="sheet-close">Cancelar</button></div>';
   } else {
     var a = S.tur.filter(function (x) { return x.id === sh.id; })[0]; if (!a) return '';
-    var l = utcToLocal(a.inicio, tz), cls = a.estado_pago === 'sena' ? 'seña' : a.estado_pago;
-    var label = { pagado: 'Cobrado', sena: 'Con seña de ' + money(a.senia_requerida), pendiente: 'Sin cobrar' }[a.estado_pago];
-    inner = '<h3>' + esc(a.cliente_nombre) + '</h3><p>' + esc((svcOf(a.servicio_id) || {}).nombre || 'Servicio') + ' · ' + a.duracion_min + ' min · ' + money(a.precio) + '</p>' +
+    var l = utcToLocal(a.inicio, tz), paid = pagado(a), saldo = Math.max(0, +a.precio - paid), cls = a.estado_pago === 'sena' ? 'seña' : a.estado_pago;
+    var label = a.estado_pago === 'pagado' ? 'Cobrado' : a.estado_pago === 'sena' ? 'Pagó ' + money(paid) + ' de ' + money(a.precio) + ' · falta ' + money(saldo) : 'Sin cobrar';
+    var its = S.items[a.id] || [];
+    var lines = its.length > 1 ? '<ul class="lines">' + its.map(function (x) { return '<li><span>' + esc(x.nombre) + ' <small>' + x.duracion_min + ' min</small></span><b>' + money(x.precio) + '</b></li>'; }).join('') + '</ul>' : '';
+    var pays = (S.pagos[a.id] || []).length ? '<ul class="lines">' + S.pagos[a.id].map(function (p) { return '<li><span>' + esc(MEDIOS[p.medio] || p.medio) + '</span><b>' + money(p.monto) + '</b></li>'; }).join('') + '</ul>' : '';
+    var cb = sh.cobro, acts;
+    if (cb) {
+      acts = '<div class="group"><span class="lbl">¿Cómo paga?</span><div class="chips">' + Object.keys(MEDIOS).map(function (k) { return chip('cb-medio', MEDIOS[k], cb.medio === k, 'data-v="' + k + '"'); }).join('') + '</div></div>' +
+        '<label>Monto a cobrar ($)<input id="cb-monto" inputmode="numeric" value="' + cb.monto + '"></label><p class="hint">Si paga una parte, queda el resto pendiente.</p><p class="err" id="cb-err" role="alert"></p>' +
+        '<div class="row"><button class="btn primary" data-act="cb-ok"' + (cb.busy ? ' disabled' : '') + '>Confirmar cobro</button><button class="btn" data-act="cb-no">Volver</button></div>';
+    } else if (sh.confirm) {
+      acts = '<p class="err" style="min-height:0"><b>¿Cancelar este turno?</b></p><div class="row"><button class="btn danger" data-act="t-cancel-yes">Sí, cancelar</button><button class="btn" data-act="t-cancel-no">No</button></div>';
+    } else {
+      acts = '<div class="row">' + (a.estado_pago !== 'pagado' ? '<button class="btn primary" data-act="cb-start">Cobrar' + (saldo ? ' ' + money(saldo) : '') + '</button>' : '') + '<button class="btn danger" data-act="t-cancel-ask">Cancelar turno</button><button class="btn" data-act="sheet-close">Cerrar</button></div>';
+    }
+    inner = '<h3>' + esc(a.cliente_nombre) + '</h3><p>' + esc(turnoNombres(a)) + ' · ' + durTxt(a.duracion_min) + ' · <b>' + money(a.precio) + '</b></p>' + lines +
       '<p class="muted">' + dlong(l.ds) + ' · ' + hhm(l.min) + ' a ' + hhm(l.min + a.duracion_min) + ' · con ' + esc(memberName(a.miembro_id)) + '</p>' +
-      '<p><i class="dot ' + cls + '"></i><b>' + label + '</b>' + (a.origen === 'link' ? ' · reservó por el link' : '') + '</p>' +
-      (sh.confirm ? '<p class="err" style="min-height:0"><b>¿Cancelar este turno?</b></p><div class="row"><button class="btn danger" data-act="t-cancel-yes">Sí, cancelar</button><button class="btn" data-act="t-cancel-no">No</button></div>'
-        : '<div class="row">' + (a.estado_pago !== 'pagado' ? '<button class="btn primary" data-act="t-paid">Marcar como cobrado</button>' : '') + '<button class="btn danger" data-act="t-cancel-ask">Cancelar turno</button><button class="btn" data-act="sheet-close">Cerrar</button></div>');
+      '<p><i class="dot ' + cls + '"></i><b>' + label + '</b>' + (a.origen === 'link' ? ' · reservó por el link' : '') + '</p>' + pays + acts;
   }
   return '<div class="scrim" data-scrim="1"><div class="sheet" role="dialog" aria-modal="true">' + inner + '</div></div>';
 }
 
 /* ---------- vistas: reserva pública ---------- */
+function pubSel() { var d = S.P; return S.pb.svcs.map(function (id) { return d.servicios.filter(function (x) { return x.id === id; })[0]; }).filter(Boolean); }
+function pubTot() { var l = pubSel(); return { n: l.length, dur: l.reduce(function (a, x) { return a + x.duracion_min; }, 0), precio: l.reduce(function (a, x) { return a + (+x.precio); }, 0) }; }
 function pubEligible() {
-  var d = S.P, b = S.pb;
+  var d = S.P, b = S.pb, sel = pubSel();
   return d.equipo.filter(function (m) {
     if (b.suc && m.sucursal_id !== b.suc) return false;
-    if (b.svc) { var sv = d.servicios.filter(function (x) { return x.id === b.svc; })[0]; if (!sv || sv.miembros.indexOf(m.id) < 0) return false; }
-    if (b.mid !== 'any' && m.id !== b.mid) return false;
+    if (sel.some(function (sv) { return sv.miembros.indexOf(m.id) < 0; })) return false;
     return true;
   });
 }
 function pubSlots() {
-  var d = S.P, b = S.pb, tz = d.negocio.zona_horaria;
-  if (!b.svc || !b.ds) return [];
-  var sv = d.servicios.filter(function (x) { return x.id === b.svc; })[0], dow = dowOf(b.ds), oc = b.ocup[b.ds] || [], now = Date.now() + 30 * 60000, set = {};
-  pubEligible().forEach(function (m) {
+  var d = S.P, b = S.pb, tz = d.negocio.zona_horaria, tot = pubTot();
+  if (!tot.n || !b.ds) return [];
+  var dow = dowOf(b.ds), oc = b.ocup[b.ds] || [], now = Date.now() + 30 * 60000, set = {};
+  pubEligible().filter(function (m) { return b.mid === 'any' || m.id === b.mid; }).forEach(function (m) {
     m.horarios.filter(function (h) { return h.dia === dow; }).forEach(function (h) {
       var a = tmin(h.desde), z = tmin(h.hasta);
-      for (var t = a; t + sv.duracion_min <= z; t += 30) {
-        var s = zonedToUtc(b.ds, t, tz).getTime(), e = s + sv.duracion_min * 60000;
+      for (var t = a; t + tot.dur <= z; t += 30) {
+        var s = zonedToUtc(b.ds, t, tz).getTime(), e = s + tot.dur * 60000;
         if (s < now) continue;
         var busy = oc.some(function (o) { return o.miembro_id === m.id && new Date(o.inicio).getTime() < e && new Date(o.fin).getTime() > s; });
         if (!busy && set[t] === undefined) set[t] = m.id;
@@ -458,30 +482,32 @@ function pubView() {
   if (!d) return '<div class="pubwrap"><div class="pubhead">' + logo(40) + '<div class="nm">Turnia</div></div><div class="card staff"><h3>No encontramos este local</h3><p class="muted">Revisá que el link esté completo o pedile uno nuevo al local.</p></div></div>';
   var b = S.pb, tz = d.negocio.zona_horaria, hdr = '<div class="pubhead">' + (d.negocio.logo_url ? '<img class="logo biz" width="40" height="40" src="' + esc(d.negocio.logo_url) + '" alt="">' : logo(40)) + '<div><div class="nm">' + esc(d.negocio.nombre) + '</div><div class="small muted">Reservá tu turno online</div></div></div>';
   if (b.done) {
-    var l = utcToLocal(b.done.inicio, tz), sv = d.servicios.filter(function (x) { return x.id === b.svc; })[0];
-    return artFor(d.negocio.rubro) + '<div class="pubwrap">' + hdr + '<div class="card staff"><h2>¡Turno reservado!</h2><p><b>' + esc(sv ? sv.nombre : 'Servicio') + '</b> · ' + dlong(l.ds) + ' a las ' + hhm(l.min) + '</p>' +
+    var l = utcToLocal(b.done.inicio, tz), lst = b.doneSvcs || [];
+    return artFor(d.negocio.rubro) + '<div class="pubwrap">' + hdr + '<div class="card staff"><h2>¡Turno reservado!</h2><p>' + dlong(l.ds) + ' a las ' + hhm(l.min) + ' · ' + durTxt(b.done.duracion_min) + '</p>' +
+      '<ul class="lines">' + lst.map(function (x) { return '<li><span>' + esc(x.nombre) + '</span><b>' + money(x.precio) + '</b></li>'; }).join('') + '<li><span><b>Total</b></span><b>' + money(b.done.precio) + '</b></li></ul>' +
       (+b.done.senia_requerida > 0 ? '<p class="muted">El local te va a pedir una seña de ' + money(b.done.senia_requerida) + ' para confirmar.</p>' : '<p class="muted">Pagás en el local.</p>') +
       '<div class="row"><button class="btn primary" data-act="p-again">Reservar otro turno</button></div></div></div>';
   }
   var sucs = d.sucursales.length > 1 ? '<div class="step"><span class="lbl">Sucursal</span><div class="chips">' + d.sucursales.map(function (s) { return chip('p-suc', esc(s.nombre), b.suc === s.id, 'data-v="' + s.id + '"'); }).join('') + '</div></div>' : '';
-  var svcs = d.servicios.map(function (x) { return '<button class="svc" data-act="p-svc" data-v="' + x.id + '" aria-pressed="' + (b.svc === x.id) + '"><div><b>' + esc(x.nombre) + '</b><span>' + x.duracion_min + ' min</span></div><em>' + money(x.precio) + '</em></button>'; }).join('');
-  var body = '';
-  if (b.svc) {
+  var svcs = d.servicios.map(function (x) { var on = b.svcs.indexOf(x.id) > -1; return '<button class="svc" data-act="p-svc" data-v="' + x.id + '" aria-pressed="' + on + '"><div><b>' + (on ? '✓ ' : '') + esc(x.nombre) + '</b><span>' + x.duracion_min + ' min</span></div><em>' + money(x.precio) + '</em></button>'; }).join('');
+  var tot = pubTot(), body = '', sum = '';
+  if (tot.n) {
+    sum = '<p class="pubsum" role="status"><b>' + tot.n + (tot.n === 1 ? ' servicio' : ' servicios') + '</b> · ' + durTxt(tot.dur) + ' · <b>' + money(tot.precio) + '</b></p>';
     var E = pubEligible();
-    var pros = chip('p-mid', 'Cualquiera', b.mid === 'any', 'data-v="any"') + d.equipo.filter(function (m) {
-      var sv = d.servicios.filter(function (x) { return x.id === b.svc; })[0];
-      return (!b.suc || m.sucursal_id === b.suc) && sv && sv.miembros.indexOf(m.id) > -1;
-    }).map(function (m) { return chip('p-mid', esc(m.nombre), b.mid === m.id, 'data-v="' + m.id + '"'); }).join('');
-    var today = todayDs(tz), days = [];
-    for (var i = 0; i < 14; i++) { var ds = addDays(today, i), dw = dowOf(ds); if (E.some(function (m) { return m.horarios.some(function (h) { return h.dia === dw; }); })) days.push(ds); }
-    var slots = b.ds ? pubSlots() : [];
-    body = '<div class="step"><span class="lbl">Profesional</span><div class="chips">' + pros + '</div></div>' +
-      '<div class="step"><span class="lbl">Día</span>' + (days.length ? '<div class="chips">' + days.map(function (x) { return chip('p-ds', (x === today ? 'Hoy · ' : '') + dlabel(x), b.ds === x, 'data-v="' + x + '"'); }).join('') + '</div>' : '<p class="muted">No hay días disponibles con esa selección.</p>') + '</div>' +
-      (b.ds ? '<div class="step"><span class="lbl">Horario</span>' + (b.loading ? '<p class="muted">Buscando horarios…</p>' : (slots.length ? '<div class="chips">' + slots.map(function (s) { return chip('p-min', hhm(s.t), b.min === s.t, 'data-v="' + s.t + '"'); }).join('') + '</div>' : '<p class="muted">No quedan horarios ese día. Probá con otro día o profesional.</p>')) + '</div>' : '') +
-      (b.min !== null ? '<div class="card staff"><h3>Tus datos</h3><label>Nombre<input id="p-name" autocomplete="name" placeholder="Nombre y apellido"></label><label>Teléfono (opcional)<input id="p-tel" type="tel" autocomplete="tel" placeholder="Para avisarte si hay cambios"></label>' +
-        '<p class="err" id="p-err" role="alert">' + esc(b.err) + '</p><div class="row"><button class="btn primary" data-act="p-submit"' + (b.busy ? ' disabled' : '') + '>Confirmar turno</button></div></div>' : '');
+    if (!E.length) body = '<div class="card staff"><p>Ningún profesional hace todos esos servicios juntos. Probá con otra combinación, o reservá por separado.</p></div>';
+    else {
+      var pros = chip('p-mid', 'Cualquiera', b.mid === 'any', 'data-v="any"') + E.map(function (m) { return chip('p-mid', esc(m.nombre), b.mid === m.id, 'data-v="' + m.id + '"'); }).join('');
+      var today = todayDs(tz), days = [];
+      for (var i = 0; i < 14; i++) { var ds = addDays(today, i), dw = dowOf(ds); if (E.some(function (m) { return m.horarios.some(function (h) { return h.dia === dw; }); })) days.push(ds); }
+      var slots = b.ds ? pubSlots() : [];
+      body = '<div class="step"><span class="lbl">Profesional</span><div class="chips">' + pros + '</div></div>' +
+        '<div class="step"><span class="lbl">Día</span>' + (days.length ? '<div class="chips">' + days.map(function (x) { return chip('p-ds', (x === today ? 'Hoy · ' : '') + dlabel(x), b.ds === x, 'data-v="' + x + '"'); }).join('') + '</div>' : '<p class="muted">No hay días disponibles con esa selección.</p>') + '</div>' +
+        (b.ds ? '<div class="step"><span class="lbl">Horario</span>' + (b.loading ? '<p class="muted">Buscando horarios…</p>' : (slots.length ? '<div class="chips">' + slots.map(function (x) { return chip('p-min', hhm(x.t), b.min === x.t, 'data-v="' + x.t + '"'); }).join('') + '</div>' : '<p class="muted">No quedan horarios ese día. Probá con otro día o profesional.</p>')) + '</div>' : '') +
+        (b.min !== null ? '<div class="card staff"><h3>Tus datos</h3><label>Nombre<input id="p-name" autocomplete="name" placeholder="Nombre y apellido"></label><label>Teléfono (opcional)<input id="p-tel" type="tel" autocomplete="tel" placeholder="Para avisarte si hay cambios"></label>' +
+          '<p class="err" id="p-err" role="alert">' + esc(b.err) + '</p><div class="row"><button class="btn primary" data-act="p-submit"' + (b.busy ? ' disabled aria-busy="true"' : '') + '>' + (b.busy ? '<span class="spin"></span>Reservando…' : 'Confirmar turno') + '</button></div></div>' : '');
+    }
   }
-  return artFor(d.negocio.rubro) + '<div class="pubwrap">' + hdr + '<div class="step">' + '<span class="lbl">Servicio</span><div class="svcs">' + (svcs || '<p class="muted">Este local todavía no cargó servicios.</p>') + '</div></div>' + sucs + body +
+  return artFor(d.negocio.rubro) + '<div class="pubwrap">' + hdr + '<div class="step"><span class="lbl">Servicios (elegí uno o varios)</span><div class="svcs">' + (svcs || '<p class="muted">Este local todavía no cargó servicios.</p>') + '</div>' + sum + '</div>' + sucs + body +
     '<p class="small muted" style="text-align:center">Reservas con Turnia</p></div>';
 }
 
@@ -524,7 +550,7 @@ async function pubLoad(slug) {
     S.P = d || null;
     if (d) {
       var s = Q.get('s'), sel = d.sucursales.filter(function (x) { return x.slug === s; })[0] || (d.sucursales.length === 1 ? d.sucursales[0] : null);
-      S.pb = { svc: null, mid: 'any', suc: sel ? sel.id : null, ds: null, min: null, done: null, err: '', ocup: {}, loading: false, busy: false };
+      S.pb = { svcs: [], mid: 'any', suc: sel ? sel.id : null, ds: null, min: null, done: null, err: '', ocup: {}, loading: false, busy: false };
     }
   } catch (e) { fail(e); S.P = null; }
   render();
@@ -620,15 +646,42 @@ document.addEventListener('click', async function (e) {
       case 'new': S.sheet = { type: 'new', mid: S.mie[0].id, min: 600 }; break;
       case 'appt': S.sheet = { type: 'detail', id: v }; break;
       case 'sheet-close': S.sheet = null; break;
+      case 'sh-svc': {
+        var shn = S.sheet; shn.client = $('#f-client').value; shn.mid = $('#f-mie').value; shn.min = +$('#f-time').value;
+        var ii = shn.svcs.indexOf(id); if (ii > -1) { if (shn.svcs.length > 1) shn.svcs.splice(ii, 1); } else shn.svcs.push(id);
+        var chosen = shn.svcs.map(svcOf); shn.dur = chosen.reduce(function (a, x) { return a + x.duracion_min; }, 0); shn.price = Math.round(chosen.reduce(function (a, x) { return a + (+x.precio); }, 0));
+        break;
+      }
       case 'sheet-save': {
-        var nm = $('#f-client').value.trim(), err = $('#f-err'), sv = svcOf($('#f-svc').value), m = S.mie.filter(function (x) { return x.id === $('#f-mie').value; })[0], min = +$('#f-time').value;
+        var nm = $('#f-client').value.trim(), err = $('#f-err'), shs = S.sheet, chosen2 = shs.svcs.map(svcOf), m = S.mie.filter(function (x) { return x.id === $('#f-mie').value; })[0], min = +$('#f-time').value;
+        var pr0 = parseInt($('#f-price').value.replace(/\D/g, ''), 10);
         if (!nm) { err.textContent = 'Escribí el nombre del cliente.'; return; }
+        if (isNaN(pr0)) { err.textContent = 'Escribí el precio en números.'; return; }
+        var tn;
         try {
-          await run(sb.from('turnos').insert({ negocio_id: S.neg.id, sucursal_id: m.sucursal_id, miembro_id: m.id, servicio_id: sv.id, cliente_nombre: nm, inicio: zonedToUtc(S.ds, min, TZ()).toISOString(), duracion_min: +$('#f-dur').value || sv.duracion_min, precio: sv.precio, origen: 'panel' }));
+          tn = await run(sb.from('turnos').insert({ negocio_id: S.neg.id, sucursal_id: m.sucursal_id, miembro_id: m.id, servicio_id: chosen2[0].id, cliente_nombre: nm, inicio: zonedToUtc(S.ds, min, TZ()).toISOString(), duracion_min: +$('#f-dur').value, precio: pr0, origen: 'panel' }).select().single());
         } catch (er) { err.textContent = errMsg(er); return; }
+        try {
+          await run(sb.from('turno_servicios').insert(chosen2.map(function (x, i) { return { negocio_id: S.neg.id, turno_id: tn.id, servicio_id: x.id, nombre: x.nombre, duracion_min: x.duracion_min, precio: x.precio, orden: i }; })));
+        } catch (er3) { await sb.from('turnos').delete().eq('id', tn.id); err.textContent = errMsg(er3); return; }
         S.sheet = null; await loadTur(); toast('Turno guardado'); break;
       }
-      case 't-paid': await run(sb.from('turnos').update({ estado_pago: 'pagado' }).eq('id', S.sheet.id)); S.sheet = null; await loadTur(); toast('Marcado como cobrado'); break;
+      case 'cb-start': { var ta = S.tur.filter(function (x) { return x.id === S.sheet.id; })[0]; S.sheet.cobro = { medio: null, monto: Math.max(0, Math.round(+ta.precio - pagado(ta))) }; break; }
+      case 'cb-no': S.sheet.cobro = null; break;
+      case 'cb-medio': { var mo = $('#cb-monto'); if (mo) S.sheet.cobro.monto = mo.value; S.sheet.cobro.medio = v; break; }
+      case 'cb-ok': {
+        var cb = S.sheet.cobro, tb = S.tur.filter(function (x) { return x.id === S.sheet.id; })[0], cerr = $('#cb-err');
+        var monto = parseInt(String($('#cb-monto').value).replace(/\D/g, ''), 10), saldo2 = Math.max(0, Math.round(+tb.precio - pagado(tb)));
+        if (!cb.medio) { cerr.textContent = 'Elegí cómo paga.'; return; }
+        if (isNaN(monto) || monto <= 0) { cerr.textContent = 'Escribí el monto en números.'; return; }
+        if (monto > saldo2) { cerr.textContent = 'El monto supera lo que falta cobrar (' + money(saldo2) + ').'; return; }
+        cb.busy = true; render();
+        try {
+          await run(sb.from('pagos').insert({ negocio_id: S.neg.id, turno_id: tb.id, monto: monto, tipo: monto >= saldo2 ? (pagado(tb) > 0 ? 'saldo' : 'total') : 'saldo', medio: cb.medio, estado: 'aprobado' }));
+          await run(sb.from('turnos').update({ estado_pago: monto >= saldo2 ? 'pagado' : 'sena' }).eq('id', tb.id));
+        } catch (er4) { cb.busy = false; fail(er4); break; }
+        S.sheet = null; await loadTur(); toast('Cobro registrado: ' + MEDIOS[cb.medio]); break;
+      }
       case 't-cancel-ask': S.sheet.confirm = true; break;
       case 't-cancel-no': S.sheet.confirm = false; break;
       case 't-cancel-yes': await run(sb.from('turnos').update({ estado: 'cancelado' }).eq('id', S.sheet.id)); S.sheet = null; await loadTur(); toast('Turno cancelado'); break;
@@ -668,7 +721,13 @@ document.addEventListener('click', async function (e) {
       }
       case 'copy': try { await navigator.clipboard.writeText(v); toast('Link copiado'); } catch (x) { toast('Copialo a mano: ' + v); } return;
       case 'p-suc': S.pb.suc = v; S.pb.mid = 'any'; S.pb.ds = null; S.pb.min = null; break;
-      case 'p-svc': S.pb.svc = v; S.pb.mid = 'any'; S.pb.ds = null; S.pb.min = null; S.pb.err = ''; break;
+      case 'p-svc': {
+        var ix = S.pb.svcs.indexOf(v); if (ix > -1) S.pb.svcs.splice(ix, 1); else if (S.pb.svcs.length < 6) S.pb.svcs.push(v);
+        S.pb.min = null; S.pb.err = '';
+        if (S.pb.mid !== 'any' && !pubEligible().some(function (m) { return m.id === S.pb.mid; })) S.pb.mid = 'any';
+        if (S.pb.ds && S.pb.svcs.length) { render(); await pubOcup(S.pb.ds); return; }
+        break;
+      }
       case 'p-mid': S.pb.mid = v === 'any' ? 'any' : v; S.pb.min = null; break;
       case 'p-ds': S.pb.ds = v; S.pb.min = null; await pubOcup(v); return;
       case 'p-min': S.pb.min = +v; S.pb.err = ''; break;
@@ -680,18 +739,19 @@ document.addEventListener('click', async function (e) {
         var mid2 = b.mid === 'any' ? slot.mid : b.mid, mem = S.P.equipo.filter(function (x) { return x.id === mid2; })[0];
         b.busy = true; b.err = ''; render();
         try {
-          b.done = await run(sb.rpc('reservar_turno', { p_slug: S.P.negocio.slug, p_sucursal: b.suc || (mem && mem.sucursal_id) || null, p_miembro: mid2, p_servicio: b.svc, p_inicio: zonedToUtc(b.ds, b.min, S.P.negocio.zona_horaria).toISOString(), p_nombre: pn, p_telefono: pt || null }));
+          b.doneSvcs = pubSel();
+          b.done = await run(sb.rpc('reservar_turno', { p_slug: S.P.negocio.slug, p_sucursal: b.suc || (mem && mem.sucursal_id) || null, p_miembro: mid2, p_servicios: b.svcs, p_inicio: zonedToUtc(b.ds, b.min, S.P.negocio.zona_horaria).toISOString(), p_nombre: pn, p_telefono: pt || null }));
         } catch (er) { b.err = errMsg(er); if (er.code === '23P01') { b.min = null; b.busy = false; await pubOcup(b.ds); return; } }
         b.busy = false; break;
       }
-      case 'p-again': S.pb.svc = null; S.pb.ds = null; S.pb.min = null; S.pb.done = null; S.pb.mid = 'any'; S.pb.ocup = {}; break;
+      case 'p-again': S.pb.svcs = []; S.pb.ds = null; S.pb.min = null; S.pb.done = null; S.pb.mid = 'any'; S.pb.ocup = {}; break;
     }
   } catch (er) { fail(er); S.authBusy = false; }
   render();
 });
 
 document.addEventListener('change', async function (e) {
-  if (e.target.id === 'f-svc') { var sv0 = svcOf(e.target.value), fd = $('#f-dur'); if (sv0 && fd) fd.innerHTML = durOpts(sv0.duracion_min); return; }
+  if (e.target.id === 'f-svc') { var sv0 = svcOf(e.target.value), fd = $('#f-dur'); if (sv0 && fd) fd.innerHTML = durOpts(sv0.duracion_min); var fp = $('#f-price'); if (fp) fp.value = Math.round(sv0.precio); return; }
   if (e.target.id === 'logo-file') {
     var f = e.target.files && e.target.files[0]; if (!f) return;
     try {

@@ -234,3 +234,8 @@ main{display:grid;gap:16px;min-width:0;align-content:start}
 .logo.turnia{object-fit:contain;border-radius:0;background:none}
 .obsvc{display:grid;gap:8px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
 .oblist{display:grid;gap:10px}
+.lines{list-style:none;margin:8px 0;padding:0;display:grid;gap:6px}
+.lines li{display:flex;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:8px;background:var(--surface2)}
+.lines small{color:var(--muted)}
+.pubsum{margin:10px 0 0;padding:10px 12px;border-radius:10px;background:var(--accent-soft);color:var(--fg)}
+.svc[aria-pressed="true"]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
