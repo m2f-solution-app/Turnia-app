@@ -163,9 +163,25 @@ async function loadTur() {
   var al = await Promise.all([
     run(sb.from('turnos').select('*').eq('negocio_id', S.neg.id).eq('estado', 'reservado').eq('estado_pago', 'pendiente').gt('senia_requerida', 0).gt('vence_en', nowIso).order('inicio')),
     run(sb.from('turnos').select('*').eq('negocio_id', S.neg.id).eq('devolucion', 'pendiente').order('inicio'))]);
-  S.al = { senas: al[0], dev: al[1] };
-  var seen = {}, ids = [];
-  S.tur.concat(S.al.senas, S.al.dev).forEach(function (x) { if (!seen[x.id]) { seen[x.id] = 1; ids.push(x.id); } });
+  var lim = new Date(Date.now() + 30 * 3600000).toISOString();
+  var av = await Promise.all([
+    run(sb.from('turnos').select('*').eq('negocio_id', S.neg.id).eq('estado', 'reservado').gte('inicio', nowIso).is('aviso_conf_en', null).order('inicio').limit(30)),
+    run(sb.from('turnos').select('*').eq('negocio_id', S.neg.id).eq('estado', 'reservado').gte('inicio', nowIso).lt('inicio', lim).is('aviso_rec_en', null).order('inicio').limit(30))]);
+  var avm = {}, avl = [];
+  av[0].map(function (x) { return [x, 'conf']; }).concat(av[1].map(function (x) { return [x, 'rec']; })).forEach(function (p) {
+    var x = p[0], hold = +x.senia_requerida > 0 && x.estado_pago === 'pendiente';
+    if (hold || avm[x.id]) return;
+    avm[x.id] = 1; x.__aviso = p[1]; avl.push(x);
+  });
+  avl.sort(function (a, b) { return a.inicio < b.inicio ? -1 : 1; });
+  S.al = { senas: al[0], dev: al[1], avisar: avl };
+  S.extra = [];
+  if (S.sheet && S.sheet.id && !findTurno(S.sheet.id)) S.extra = await run(sb.from('turnos').select('*').eq('id', S.sheet.id));
+  var seen = {}, ids = [], cids = {};
+  S.tur.concat(S.al.senas, S.al.dev, S.al.avisar, S.extra).forEach(function (x) { if (!seen[x.id]) { seen[x.id] = 1; ids.push(x.id); } if (x.cliente_id) cids[x.cliente_id] = 1; });
+  S.cli = {};
+  var cl = Object.keys(cids);
+  if (cl.length) (await run(sb.from('clientes').select('id,nombre,telefono').in('id', cl))).forEach(function (c) { S.cli[c.id] = c; });
   if (ids.length) {
     var r = await Promise.all([run(sb.from('turno_servicios').select('*').in('turno_id', ids).order('orden')), run(sb.from('pagos').select('*').in('turno_id', ids).order('creado_en'))]);
     r[0].forEach(function (x) { (S.items[x.turno_id] = S.items[x.turno_id] || []).push(x); });
@@ -173,7 +189,7 @@ async function loadTur() {
   }
 }
 var MEDIOS = { efectivo: 'Efectivo', mercadopago: 'QR Mercado Pago', transferencia: 'Transferencia' };
-function findTurno(id) { return S.tur.concat(S.al.senas, S.al.dev).filter(function (x) { return x.id === id; })[0]; }
+function findTurno(id) { return S.tur.concat(S.al.senas, S.al.dev, S.al.avisar || [], S.extra || []).filter(function (x) { return x.id === id; })[0]; }
 function turnoNombres(t) { var it = S.items[t.id]; if (it && it.length) return it.map(function (x) { return x.nombre; }).join(' + '); var sv = svcOf(t.servicio_id); return sv ? sv.nombre : 'Servicio'; }
 function pagado(t) { return (S.pagos[t.id] || []).filter(function (p) { return p.estado === 'aprobado'; }).reduce(function (a, p) { return a + (+p.monto); }, 0); }
 function durTxt(m) { return m >= 60 ? Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '') : m + ' min'; }
@@ -346,12 +362,38 @@ function shell() {
   var nav = TABS.map(function (t) { return '<button data-act="tab" data-v="' + t[0] + '"' + (S.tab === t[0] ? ' aria-current="page"' : '') + '>' + ico(t[2]) + '<span>' + t[1] + '</span></button>'; }).join('');
   var acct = S.acct ? '<div class="card acct"><div><b>' + esc(S.neg.nombre) + '</b><div class="small muted">' + esc(S.user && S.user.email || '') + '</div></div>' +
     '<div class="group"><span class="lbl">Apariencia</span>' + themeChips() + '</div><button class="btn" data-act="logout">Cerrar sesión</button></div>' : '';
-  var body = { agenda: agendaView, equipo: equipoView, servicios: serviciosView, finanzas: finanzasView, ajustes: ajustesView }[S.tab]();
+  var body = { agenda: agendaView, equipo: equipoView, servicios: serviciosView, finanzas: finanzasView, ajustes: ajustesView, clientas: clientasView }[S.tab]();
   return '<div class="top"><div class="l">' + bizLogo(36) + '<div><div class="nm">Turnia</div><div class="sub">' + esc(S.neg.nombre) + '</div></div></div>' +
     '<div class="r"><button class="chip" data-act="acct" aria-expanded="' + S.acct + '" style="display:flex;align-items:center;gap:6px">' + ico('gear') + 'Cuenta</button></div>' + acct + '</div>' +
     '<div class="shell"><nav class="nav" aria-label="Secciones">' + nav + '</nav><main>' + body + '</main></div>' + (S.sheet ? sheetView() : '');
 }
 
+function waPhone(raw) {
+  var d = String(raw || '').replace(/\D/g, '');
+  if (!d) return '';
+  d = d.replace(/^00/, '');
+  if (d.indexOf('54') === 0) { d = d.slice(2); }
+  d = d.replace(/^0/, '');
+  if (d.indexOf('9') === 0 && d.length === 11) d = d.slice(1);
+  if (d.length === 12) { for (var i = 2; i <= 4; i++) { if (d.substr(i, 2) === '15') { d = d.slice(0, i) + d.slice(i + 2); break; } } }
+  return '549' + d;
+}
+function waMsg(t, kind) {
+  var tz = TZ(), l = utcToLocal(t.inicio, tz), c = S.cli[t.cliente_id], nom = String(t.cliente_nombre || '').trim().split(/\s+/)[0] || '',
+    srv = turnoNombres(t), fecha = DOWL[dowOf(l.ds)].toLowerCase() + ' ' + (+l.ds.split('-')[2]) + ' a las ' + hhm(l.min), url = location.origin + location.pathname + '?n=' + S.neg.slug + '&t=' + t.token, ln = S.neg.nombre;
+  if (kind === 'dev') return 'Hola ' + nom + ', te escribimos de ' + ln + '. Tu turno (' + srv + ', ' + fecha + ') quedó cancelado y te vamos a devolver la seña de ' + money(pagado(t) || +t.senia_requerida) + '. ¡Gracias por avisar a tiempo!';
+  if (kind === 'rec') return 'Hola ' + nom + ', te recordamos tu turno en ' + ln + ': ' + srv + ', ' + fecha + '. Si no podés venir, avisanos o cancelalo acá: ' + url + ' ¡Te esperamos!';
+  var sena = +t.senia_requerida > 0 && (t.estado_pago === 'sena' || t.estado_pago === 'pagado');
+  return 'Hola ' + nom + ', tu turno en ' + ln + ' quedó confirmado: ' + srv + ', ' + fecha + '.' + (sena ? ' Recibimos tu seña, ¡gracias!' : '') + ' Podés verlo o cancelarlo acá: ' + url + (sena ? ' Si cancelás con ' + S.neg.cancel_horas + ' h o más de anticipación, te devolvemos la seña.' : '');
+}
+function waBlock(a) {
+  var c = S.cli[a.cliente_id], ph = c ? waPhone(c.telefono) : '', tz = TZ(), fmt = function (iso) { var l = utcToLocal(iso, tz); return dlabel(l.ds) + ' ' + hhm(l.min); };
+  var hold = +a.senia_requerida > 0 && a.estado_pago === 'pendiente' && a.estado === 'reservado';
+  if (a.estado !== 'reservado' || hold) return '';
+  if (!ph) return '<div class="card note"><b>Avisar a la clienta</b><p class="muted small">No tiene teléfono cargado, por eso no puedo armar el mensaje.</p></div>';
+  return '<div class="card note"><b>Avisar por WhatsApp</b><div class="row"><button class="btn' + (a.aviso_conf_en ? '' : ' primary') + '" data-act="wa" data-v="conf">' + (a.aviso_conf_en ? 'Reenviar confirmación' : 'Enviar confirmación') + '</button><button class="btn" data-act="wa" data-v="rec">' + (a.aviso_rec_en ? 'Reenviar recordatorio' : 'Enviar recordatorio') + '</button></div>' +
+    '<p class="muted small">' + (a.aviso_conf_en ? '✓ Confirmación enviada ' + fmt(a.aviso_conf_en) + '. ' : 'Confirmación sin enviar. ') + (a.aviso_rec_en ? '✓ Recordatorio enviado ' + fmt(a.aviso_rec_en) + '.' : '') + ' Se abre WhatsApp con el mensaje escrito; vos solo lo enviás.</p></div>';
+}
 function alertsHtml() {
   var tz = TZ(), h = '';
   if (S.al.senas.length) h += '<div class="card staff alertc"><h3>Señas por confirmar (' + S.al.senas.length + ')</h3>' + S.al.senas.map(function (t) {
@@ -360,7 +402,11 @@ function alertsHtml() {
   }).join('') + '</div>';
   if (S.al.dev.length) h += '<div class="card staff alertc"><h3>Señas para devolver (' + S.al.dev.length + ')</h3>' + S.al.dev.map(function (t) {
     var l = utcToLocal(t.inicio, tz), amt = pagado(t) || +t.senia_requerida;
-    return '<div class="alrow"><span><b>' + esc(t.cliente_nombre) + '</b> canceló a tiempo (' + dlabel(l.ds) + ' ' + hhm(l.min) + ')<br><small>Devolver ' + money(amt) + '</small></span><button class="btn" data-act="dev-ok" data-id="' + t.id + '">Ya devolví</button></div>';
+    return '<div class="alrow"><span><b>' + esc(t.cliente_nombre) + '</b> canceló a tiempo (' + dlabel(l.ds) + ' ' + hhm(l.min) + ')<br><small>Devolver ' + money(amt) + '</small></span><button class="btn" data-act="wa-dev" data-id="' + t.id + '">Avisar</button><button class="btn" data-act="dev-ok" data-id="' + t.id + '">Ya devolví</button></div>';
+  }).join('') + '</div>';
+  if ((S.al.avisar || []).length) h += '<div class="card staff alertc"><h3>Para avisar (' + S.al.avisar.length + ')</h3>' + S.al.avisar.map(function (t) {
+    var l = utcToLocal(t.inicio, tz);
+    return '<div class="alrow"><span><b>' + esc(t.cliente_nombre) + '</b> · ' + dlabel(l.ds) + ' ' + hhm(l.min) + '<br><small>' + (t.__aviso === 'rec' ? 'Falta el recordatorio' : 'Falta confirmar el turno') + '</small></span><button class="btn primary" data-act="appt" data-v="' + t.id + '">Avisar</button></div>';
   }).join('') + '</div>';
   return h;
 }
@@ -423,6 +469,27 @@ function fijoPeriodo(m, r, today) {
   }
   return Math.round(tot);
 }
+async function loadClientas() {
+  var r = await Promise.all([run(sb.from('clientes').select('*').eq('negocio_id', S.neg.id).order('creado_en', { ascending: false }).limit(500)), run(sb.from('turnos').select('id,cliente_id,inicio,estado').eq('negocio_id', S.neg.id).order('inicio', { ascending: false }).limit(3000))]);
+  var agg = {};
+  r[1].forEach(function (t) { if (!t.cliente_id || (t.estado !== 'reservado' && t.estado !== 'completado')) return; var a = agg[t.cliente_id] = agg[t.cliente_id] || { n: 0, last: null }; a.n++; if (!a.last || t.inicio > a.last) a.last = t.inicio; });
+  S.cl = r[0].map(function (c) { var a = agg[c.id] || { n: 0, last: null }; return { c: c, n: a.n, last: a.last }; }).sort(function (x, y) { return y.n - x.n; });
+  render();
+}
+function clientasView() {
+  var tz = TZ(), q = (S.cq || '').toLowerCase().replace(/\s+/g, ' ').trim(), n = S.neg, list = (S.cl || []).filter(function (x) { return !q || (x.c.nombre || '').toLowerCase().indexOf(q) > -1 || String(x.c.telefono || '').replace(/\D/g, '').indexOf(q.replace(/\D/g, '') || '§') > -1; });
+  var rows = list.map(function (x) {
+    var c = x.c, ph = waPhone(c.telefono), pos = n.fid_activa && x.n ? (((x.n - 1) % n.fid_cada) + 1) : 0, l = x.last ? utcToLocal(x.last, tz) : null;
+    return '<div class="card staff cli"><div class="top2"><b>' + esc(c.nombre) + '</b><span class="tag">' + x.n + (x.n === 1 ? ' turno' : ' turnos') + '</span></div>' +
+      '<p class="muted small">' + esc(c.telefono || 'Sin teléfono') + (l ? ' · último: ' + dlabel(l.ds) : '') + '</p>' +
+      (n.fid_activa ? '<div class="fmini" aria-label="Sellos ' + pos + ' de ' + n.fid_cada + '">' + Array.apply(null, Array(n.fid_cada)).map(function (_, i) { return '<i class="' + (i < pos ? 'on' : '') + '"></i>'; }).join('') + '<small>' + (x.n && x.n % n.fid_cada === 0 ? 'Tarjeta completa' : pos + ' de ' + n.fid_cada) + '</small></div>' : '') +
+      '<div class="two"><label>DNI (opcional, uso interno)<input inputmode="numeric" data-bind="c-dni" data-id="' + c.id + '" value="' + esc(c.dni || '') + '" placeholder="Sin cargar"></label>' + (ph ? '<div class="row" style="align-self:end"><a class="btn" href="https://wa.me/' + ph + '" target="_blank" rel="noopener">WhatsApp</a></div>' : '') + '</div></div>';
+  }).join('');
+  return '<div class="head"><h2>Mis clientas</h2><button class="btn" data-act="tab" data-v="ajustes">‹ Ajustes</button></div>' +
+    '<label>Buscar<input id="cq" value="' + esc(S.cq || '') + '" placeholder="Nombre o teléfono" autocomplete="off"></label>' +
+    (S.cl ? (rows || '<p class="muted">' + (S.cl.length ? 'No hay resultados.' : 'Todavía no hay clientas. Aparecen cuando reservan por el link o cuando cargás su teléfono en un turno.') + '</p>') : '<div class="loading">Cargando…</div>');
+}
+document.addEventListener('input', function (e) { if (e.target.id === 'cq') { S.cq = e.target.value; var pos = e.target.selectionStart; render(); var c = document.getElementById('cq'); if (c) { c.focus(); try { c.setSelectionRange(pos, pos); } catch (x) { } } } });
 function equipoView() {
   var order = [1, 2, 3, 4, 5, 6, 0], ab = ['D', 'L', 'M', 'M', 'J', 'V', 'S'], RL = { dueno: 'Dueño o dueña', encargado: 'Encargado', profesional: 'Profesional' };
   var hrs = function (sel, key, id) { var o = ''; for (var h = 6; h <= 23; h++) o += '<option value="' + (h * 60) + '"' + (h * 60 === sel ? ' selected' : '') + '>' + h + ':00</option>'; return '<select data-bind="' + key + '" data-id="' + id + '">' + o + '</select>'; };
@@ -461,6 +528,14 @@ function serviciosView() {
 }
 
 function pubUrl(sucSlug) { return location.origin + location.pathname + '?n=' + S.neg.slug + (sucSlug ? '&s=' + sucSlug : ''); }
+function fidConfig(n) {
+  var on = !!n.fid_activa;
+  return '<div class="card staff"><div class="top2"><h3>Tarjeta de fidelidad</h3>' + chip('fid-toggle', on ? 'Activada' : 'Desactivada', on, '') + '</div>' +
+    '<p class="muted small">Cada turno suma un sello a la tarjeta de la clienta, que ve cuando le confirmás. Al completar la tarjeta, el turno siguiente lleva descuento. La clienta se reconoce por su teléfono.</p>' +
+    (on ? '<div class="two"><label>Descuento en el turno número<input type="number" inputmode="numeric" min="2" max="20" data-bind="n-fidcada" value="' + n.fid_cada + '"></label><label>Descuento (%)<input type="number" inputmode="numeric" min="1" max="100" data-bind="n-fidpct" value="' + n.fid_pct + '"></label></div>' +
+      '<p class="hint">Ejemplo: la clienta paga normal sus primeros ' + (n.fid_cada - 1) + ' turnos y el ' + n.fid_cada + '.º tiene ' + n.fid_pct + '% de descuento. Después arranca una tarjeta nueva.</p>' : '') +
+    '<div class="row"><button class="btn" data-act="tab" data-v="clientas">Ver mis clientas</button></div></div>';
+}
 function ajustesView() {
   var n = S.neg;
   var links = (n.tiene_sucursales && S.suc.length > 1) ? S.suc.map(function (s) { return '<div class="group"><span class="lbl">' + esc(s.nombre) + '</span><span class="url">' + esc(pubUrl(s.slug)) + '</span><div class="row"><button class="btn" data-act="copy" data-v="' + esc(pubUrl(s.slug)) + '">Copiar</button></div></div>'; }).join('')
@@ -471,7 +546,7 @@ function ajustesView() {
     '<div class="row"><a class="btn" href="' + esc(pubUrl(n.tiene_sucursales && S.suc[0] ? S.suc[0].slug : '')) + '" target="_blank" rel="noopener">Ver como cliente</a></div></div>' +
     '<div class="card staff"><h3>Guía de configuración</h3><p class="muted small">Repasá logo, servicios, horarios, equipo, cobros y link paso a paso.</p><div class="row"><button class="btn" data-act="ob-guia">Abrir la guía</button></div></div>' +
     '<div class="card staff"><h3>Negocio</h3><label>Nombre<input data-bind="n-nombre" value="' + esc(n.nombre) + '"></label>' +
-    '</div><div class="card staff"><h3>Seña y cancelaciones</h3>' + senaFields(n) + '</div>' + sucs;
+    '</div><div class="card staff"><h3>Seña y cancelaciones</h3>' + senaFields(n) + '</div>' + fidConfig(n) + sucs;
 }
 
 function sheetView() {
@@ -482,6 +557,7 @@ function sheetView() {
     if (!sh.svcs) { sh.svcs = [S.srv[0].id]; sh.dur = S.srv[0].duracion_min; sh.price = Math.round(S.srv[0].precio); sh.client = ''; }
     inner = '<h3>Nuevo turno</h3><p class="muted small">' + dlong(S.ds) + '</p>' +
       '<label>Cliente<input id="f-client" placeholder="Nombre y apellido" autocomplete="off" value="' + esc(sh.client) + '"></label>' +
+      '<label>Teléfono (opcional)<input id="f-tel" type="tel" inputmode="tel" placeholder="Para avisarle y sumar a su tarjeta" autocomplete="off"></label>' +
       '<div class="group"><span class="lbl">Servicios (podés elegir varios)</span><div class="chips">' + S.srv.map(function (x) { return chip('sh-svc', esc(x.nombre), sh.svcs.indexOf(x.id) > -1, 'data-id="' + x.id + '"'); }).join('') + '</div></div>' +
       '<div class="two"><label>Duración total<select id="f-dur">' + durOpts(sh.dur) + '</select></label><label>Precio total ($)<input id="f-price" inputmode="numeric" value="' + sh.price + '"></label></div>' +
       '<div class="two"><label>Profesional<select id="f-mie">' + S.mie.map(function (m) { return '<option value="' + m.id + '"' + (m.id === sh.mid ? ' selected' : '') + '>' + esc(m.nombre) + '</option>'; }).join('') + '</select></label><label>Hora<select id="f-time">' + to + '</select></label></div>' +
@@ -502,7 +578,7 @@ function sheetView() {
       acts = '<p class="err" style="min-height:0"><b>¿Cancelar este turno?</b></p><div class="row"><button class="btn danger" data-act="t-cancel-yes">Sí, cancelar</button><button class="btn" data-act="t-cancel-no">No</button></div>';
     } else {
       var penSena = +a.senia_requerida > 0 && a.estado_pago === 'pendiente' && a.estado === 'reservado';
-      acts = (penSena ? '<div class="card note"><b>Seña pendiente: ' + money(a.senia_requerida) + '</b><p class="muted small">' + (a.vence_en ? 'El horario está retenido hasta las ' + hhm(utcToLocal(a.vence_en, tz).min) + '. ' : '') + (a.aviso_pago ? 'La clienta avisó que ya transfirió. ' : '') + 'Cuando veas la plata en tu cuenta, confirmala.</p><div class="row"><button class="btn primary" data-act="sena-ok">Confirmar seña recibida</button></div></div>' : '') +
+      acts = waBlock(a) + (penSena ? '<div class="card note"><b>Seña pendiente: ' + money(a.senia_requerida) + '</b><p class="muted small">' + (a.vence_en ? 'El horario está retenido hasta las ' + hhm(utcToLocal(a.vence_en, tz).min) + '. ' : '') + (a.aviso_pago ? 'La clienta avisó que ya transfirió. ' : '') + 'Cuando veas la plata en tu cuenta, confirmala.</p><div class="row"><button class="btn primary" data-act="sena-ok">Confirmar seña recibida</button></div></div>' : '') +
         '<div class="row">' + (a.estado_pago !== 'pagado' ? '<button class="btn' + (penSena ? '' : ' primary') + '" data-act="cb-start">Cobrar' + (saldo ? ' ' + money(saldo) : '') + '</button>' : '') + '<button class="btn danger" data-act="t-cancel-ask">Cancelar turno</button><button class="btn" data-act="sheet-close">Cerrar</button></div>';
     }
     inner = '<h3>' + esc(a.cliente_nombre) + '</h3><p>' + esc(turnoNombres(a)) + ' · ' + durTxt(a.duracion_min) + ' · <b>' + money(a.precio) + '</b></p>' + lines +
@@ -639,13 +715,47 @@ function pubSlots(ds) {
   });
   return Object.keys(set).map(Number).sort(function (a, c) { return a - c; }).map(function (t) { return { t: t, mid: set[t] }; });
 }
+var FRASES = {
+  manicura: ['Unas manos cuidadas dicen mucho sin decir nada.', 'El mejor accesorio es un esmaltado impecable.', 'Hoy te elegís a vos. Tus uñas lo van a agradecer.', 'Los pequeños detalles hacen los días más lindos.'],
+  peluqueria: ['Un buen look empieza con ganas de cambiar.', 'Tu pelo cuenta quién sos: hoy lo hacemos brillar.', 'Cada visita es un paso más hacia tu mejor versión.', 'Cuando te sentís linda, se nota.'],
+  barberia: ['Un buen corte cambia el día.', 'La prolijidad es la mejor carta de presentación.', 'El estilo es decir quién sos sin hablar.', 'Salís con otra cara, volvés con otra actitud.']
+};
+var CHECK = '<svg viewBox="0 0 24 24" width="60%" height="60%" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+function fidCard(info, st, token) {
+  var f = info.fid; if (!f || (st !== 'ok' && st !== 'pagar')) return '';
+  var cada = +f.cada, n = +f.n, pos = ((n - 1) % cada) + 1, premio = n % cada === 0, pend = st === 'pagar', firm = pend ? pos - 1 : pos, rub = info.negocio.rubro, anim = S.stampSeen !== token && !pend;
+  var slots = '';
+  for (var i = 1; i <= cada; i++) {
+    var on = i <= firm, gift = i === cada, cur = i === pos;
+    slots += '<div class="fslot' + (on ? ' on' : '') + (gift ? ' gift' : '') + (cur && !pend && anim ? ' new' : '') + (cur && pend ? ' next' : '') + '"' + (cur ? ' aria-label="Tu turno número ' + pos + '"' : '') + '>' +
+      (on ? '<span class="stamp">' + (gift ? '<b>−' + f.pct + '%</b>' : CHECK) + '</span>' : (gift ? '<b class="gl">−' + f.pct + '%</b>' : '<span class="num">' + i + '</span>')) + '</div>';
+  }
+  var left = cada - pos, msg;
+  if (pend) msg = 'Tu sello se firma cuando se confirme la seña.';
+  else if (premio) msg = '¡Completaste tu tarjeta! Este turno ya tiene tu <b>' + f.pct + '% de descuento</b> aplicado.';
+  else if (left === 1) msg = '¡Tu próximo turno tiene <b>' + f.pct + '% de descuento</b>!';
+  else msg = 'Te faltan <b>' + left + ' turnos</b> para tu <b>' + f.pct + '% de descuento</b>.';
+  var fr = (FRASES[rub] || FRASES.manicura)[n % 4];
+  if (anim) setTimeout(function () { S.stampSeen = token; }, 2600);
+  return '<div class="fidcard" role="group" aria-label="Tarjeta de fidelidad"><div class="fhead"><span class="fkick">Tarjeta de fidelidad</span><b>' + esc(info.negocio.nombre) + '</b></div>' +
+    '<div class="fgrid">' + slots + '</div><p class="fmsg">' + msg + '</p>' +
+    (pend ? '' : '<div class="firma"><span>' + esc(info.negocio.nombre) + '</span><small>sello ' + pos + ' de ' + cada + ' · ' + dlabel(utcToLocal(new Date().toISOString(), info.negocio.zona_horaria).ds) + '</small></div>') +
+    '<p class="ffrase">“' + fr + '”</p></div>';
+}
+function fidPreviewHtml(b) {
+  var d = S.P && S.P.negocio, f = b && b.fid; if (!d || !d.fid_activa || !f) return '';
+  var tot = pubTot();
+  if (f.premio) return '<div class="fidnote gift"><b>' + (f.conocida ? '¡Hola de nuevo, ' + esc(f.nombre) + '!' : '¡Bienvenida!') + '</b> Este va a ser tu turno número ' + f.n + ': tiene <b>' + f.pct + '% de descuento</b>' + (tot.precio ? ' (pagás ' + money(Math.round(tot.precio * (100 - f.pct) / 100)) + ' en vez de ' + money(tot.precio) + ')' : '') + '.</div>';
+  var left = f.cada - (((f.n - 1) % f.cada) + 1);
+  return '<div class="fidnote">' + (f.conocida ? '<b>¡Hola de nuevo, ' + esc(f.nombre) + '!</b> Este será tu turno número ' + f.n + '. ' : 'Con este turno empezás tu tarjeta de fidelidad. ') + 'Te ' + (left === 1 ? 'falta 1 turno' : 'faltan ' + left + ' turnos') + ' para tu ' + f.pct + '% de descuento.</div>';
+}
 function mineView(info) {
   var t = info.turno, tz = info.negocio.zona_horaria, l = utcToLocal(t.inicio, tz), now = Date.now(), vence = t.vence_en ? new Date(t.vence_en).getTime() : 0;
   var st = t.estado === 'cancelado' ? 'cancelado' : t.estado === 'completado' ? 'ok' : (t.estado_pago === 'pendiente' && +t.senia_requerida > 0) ? (vence > now ? 'pagar' : 'vencido') : 'ok';
   var head = { pagar: ['Reservamos tu turno', 'Falta un paso: transferí la seña para confirmarlo.'], vencido: ['Se venció el tiempo para pagar la seña', 'El horario se liberó. Podés reservar de nuevo.'], cancelado: ['Turno cancelado', ''], ok: ['¡Turno confirmado!', ''] }[st];
   var h = '<div class="card staff mine ' + st + '"><h2>' + head[0] + '</h2>' + (head[1] ? '<p class="muted">' + head[1] + '</p>' : '') +
     '<p><b>' + dlong(l.ds) + ' a las ' + hhm(l.min) + '</b> · ' + durTxt(t.duracion_min) + '</p>' +
-    '<ul class="lines">' + info.items.map(function (x) { return '<li><span>' + esc(x.nombre) + ' <small>' + x.duracion_min + ' min</small></span><b>' + money(x.precio) + '</b></li>'; }).join('') + '<li><span><b>Total</b></span><b>' + money(t.precio) + '</b></li></ul>';
+    '<ul class="lines">' + info.items.map(function (x) { return '<li><span>' + esc(x.nombre) + ' <small>' + x.duracion_min + ' min</small></span><b>' + money(x.precio) + '</b></li>'; }).join('') + (+t.descuento_pct > 0 ? '<li><span>Descuento por fidelidad (' + t.descuento_pct + '%)</span><b>−' + money(Math.round(info.items.reduce(function (a, x) { return a + (+x.precio); }, 0) - t.precio)) + '</b></li>' : '') + '<li><span><b>Total</b></span><b>' + money(t.precio) + '</b></li></ul>';
   if (st === 'pagar') {
     var vv = utcToLocal(t.vence_en, tz);
     h += '<div class="paybox"><p class="small muted">Transferí a este alias</p><div class="aliasrow"><b class="alias">' + esc(info.alias_pago || '') + '</b><button class="btn" data-act="copy" data-v="' + esc(info.alias_pago || '') + '">Copiar</button></div>' +
@@ -662,7 +772,7 @@ function mineView(info) {
     else h += '<div class="row"><button class="btn" data-act="m-cancel">Cancelar turno</button></div>';
   }
   h += '<div class="row"><a class="btn' + (st === 'vencido' || st === 'cancelado' ? ' primary' : '') + '" href="' + esc(location.pathname + '?n=' + info.negocio.slug) + '">Reservar otro turno</a></div></div>';
-  return h;
+  return h + fidCard(info, st, S.pb && S.pb.token || 'x');
 }
 async function mineLoad(token) {
   S.mine = await run(sb.rpc('turno_publico', { p_token: token }));
@@ -688,7 +798,7 @@ function pubView() {
   var svcs = d.servicios.map(function (x) { var on = b.svcs.indexOf(x.id) > -1; return '<button class="svc" data-act="p-svc" data-v="' + x.id + '" aria-pressed="' + on + '"><div><b>' + (on ? '✓ ' : '') + esc(x.nombre) + '</b><span>' + x.duracion_min + ' min</span></div><em>' + money(x.precio) + '</em></button>'; }).join('');
   var tot = pubTot(), body = '', sum = '';
   if (tot.n) {
-    sum = '<p class="pubsum" role="status"><b>' + tot.n + (tot.n === 1 ? ' servicio' : ' servicios') + '</b> · ' + durTxt(tot.dur) + ' · <b>' + money(tot.precio) + '</b>' + (d.negocio.sena_pct > 0 ? '<br><small>Seña para confirmar: ' + money(Math.round(tot.precio * d.negocio.sena_pct / 100)) + ' (' + d.negocio.sena_pct + '%). Después de reservar tenés ' + durTxt(d.negocio.hold_min) + ' para transferirla.</small>' : '') + '</p>';
+    sum = '<p class="pubsum" role="status"><b>' + tot.n + (tot.n === 1 ? ' servicio' : ' servicios') + '</b> · ' + durTxt(tot.dur) + ' · <b>' + money(tot.precio) + '</b>' + (d.negocio.sena_pct > 0 ? '<br><small>Seña para confirmar: ' + money(Math.round(tot.precio * d.negocio.sena_pct / 100)) + ' (' + d.negocio.sena_pct + '%). Después de reservar tenés ' + durTxt(d.negocio.hold_min) + ' para transferirla.</small>' : '') + (d.negocio.fid_activa ? '<br><small>Tarjeta de fidelidad: cada ' + d.negocio.fid_cada + '.º turno tiene ' + d.negocio.fid_pct + '% de descuento.</small>' : '') + '</p>';
     var E = pubEligible();
     if (!E.length) body = '<div class="card staff"><p>Ningún profesional hace todos esos servicios juntos. Probá con otra combinación, o reservá por separado.</p></div>';
     else {
@@ -706,7 +816,7 @@ function pubView() {
       body = '<div class="step"><span class="lbl">Profesional</span><div class="chips">' + pros + '</div></div>' + sugHtml +
         '<div class="step"><span class="lbl">O elegí el día</span>' + (days.length ? '<div class="chips">' + days.map(function (x) { return x.n ? chip('p-ds', (x.ds === today ? 'Hoy · ' : '') + dlabel(x.ds), b.ds === x.ds, 'data-v="' + x.ds + '"') : '<button class="chip" disabled aria-label="' + dlabel(x.ds) + ', sin lugar">' + dlabel(x.ds) + ' · completo</button>'; }).join('') + '</div>' : '<p class="muted">No hay días disponibles con esa selección.</p>') + '</div>' +
         (b.ds ? '<div class="step"><span class="lbl">Horario</span>' + (b.loading ? '<p class="muted">Actualizando horarios…</p>' : (slots.length ? '<div class="chips">' + slots.map(function (x) { return chip('p-min', hhm(x.t), b.min === x.t, 'data-v="' + x.t + '"'); }).join('') + '</div>' : '<p class="muted">No quedan horarios ese día. Probá con otro día o profesional.</p>')) + '</div>' : '') +
-        (b.min !== null ? '<div class="card staff"><h3>Tus datos</h3><label>Nombre<input id="p-name" autocomplete="name" placeholder="Nombre y apellido"></label><label>Teléfono (opcional)<input id="p-tel" type="tel" autocomplete="tel" placeholder="Para avisarte si hay cambios"></label>' +
+        (b.min !== null ? '<div class="card staff"><h3>Tus datos</h3><label>Nombre<input id="p-name" autocomplete="name" placeholder="Nombre y apellido" value="' + esc(b.name || '') + '"></label><label>Teléfono / WhatsApp<input id="p-tel" type="tel" inputmode="tel" autocomplete="tel" placeholder="Ej: 11 2345 6789" value="' + esc(b.tel || '') + '"></label><p class="hint">Lo usamos para avisarte si hay cambios en tu turno.</p><div id="p-fid">' + fidPreviewHtml(b) + '</div>' +
           '<p class="err" id="p-err" role="alert">' + esc(b.err) + '</p><div class="row"><button class="btn primary" data-act="p-submit"' + (b.busy ? ' disabled aria-busy="true"' : '') + '>' + (b.busy ? '<span class="spin"></span>Reservando…' : 'Confirmar turno') + '</button></div></div>' : '');
     }
   }
@@ -843,7 +953,9 @@ document.addEventListener('click', async function (e) {
       }
       case 'ob-svc-del': await run(sb.from('servicios').delete().eq('id', id)); await loadAll(S.neg.id); break;
       case 'ob-guia': S.ob = { step: 1 }; S.route = 'onb'; break;
-      case 'tab': S.tab = v; S.acct = false; S.sheet = null; if (v === 'finanzas') { S.fin.loaded = false; render(); await loadFin(); } break;
+      case 'fid-toggle': await run(sb.from('negocios').update({ fid_activa: !S.neg.fid_activa }).eq('id', S.neg.id)); await loadAll(S.neg.id); break;
+      case 'cq-clear': S.cq = ''; break;
+      case 'tab': if (v === 'clientas') { S.tab = v; S.acct = false; S.sheet = null; render(); await loadClientas(); break; } S.tab = v; S.acct = false; S.sheet = null; if (v === 'finanzas') { S.fin.loaded = false; render(); await loadFin(); } break;
       case 'fin-range': S.fin.range = v; S.fin.loaded = false; render(); await loadFin(); break;
       case 'fin-hoy': S.fin.ref = null; S.fin.loaded = false; render(); await loadFin(); break;
       case 'fin-nav': {
@@ -875,14 +987,24 @@ document.addEventListener('click', async function (e) {
         var pr0 = parseInt($('#f-price').value.replace(/\D/g, ''), 10);
         if (!nm) { err.textContent = 'Escribí el nombre del cliente.'; return; }
         if (isNaN(pr0)) { err.textContent = 'Escribí el precio en números.'; return; }
-        var tn;
+        var tn, cliId = null, descM = 0, prF = pr0, telM = $('#f-tel').value.trim(), keyM = telM.replace(/\D/g, '').slice(-8);
+        if (telM && keyM.length < 8) { err.textContent = 'El teléfono parece incompleto.'; return; }
         try {
-          tn = await run(sb.from('turnos').insert({ negocio_id: S.neg.id, sucursal_id: m.sucursal_id, miembro_id: m.id, servicio_id: chosen2[0].id, cliente_nombre: nm, inicio: zonedToUtc(S.ds, min, TZ()).toISOString(), duracion_min: +$('#f-dur').value, precio: pr0, origen: 'panel' }).select().single());
+          if (keyM.length >= 8) {
+            var fnd = await run(sb.from('clientes').select('*').eq('negocio_id', S.neg.id).eq('tel_key', keyM).limit(1));
+            var cli = fnd[0] || await run(sb.from('clientes').insert({ negocio_id: S.neg.id, nombre: nm, telefono: telM }).select().single());
+            cliId = cli.id;
+            if (S.neg.fid_activa) {
+              var prev = await run(sb.from('turnos').select('id').eq('negocio_id', S.neg.id).eq('cliente_id', cliId).in('estado', ['reservado', 'completado']));
+              if ((prev.length + 1) % S.neg.fid_cada === 0) { descM = S.neg.fid_pct; prF = Math.round(pr0 * (100 - descM) / 100); }
+            }
+          }
+          tn = await run(sb.from('turnos').insert({ negocio_id: S.neg.id, sucursal_id: m.sucursal_id, miembro_id: m.id, servicio_id: chosen2[0].id, cliente_id: cliId, cliente_nombre: nm, inicio: zonedToUtc(S.ds, min, TZ()).toISOString(), duracion_min: +$('#f-dur').value, precio: prF, origen: 'panel', descuento_pct: descM }).select().single());
         } catch (er) { err.textContent = errMsg(er); return; }
         try {
           await run(sb.from('turno_servicios').insert(chosen2.map(function (x, i) { return { negocio_id: S.neg.id, turno_id: tn.id, servicio_id: x.id, nombre: x.nombre, duracion_min: x.duracion_min, precio: x.precio, orden: i }; })));
         } catch (er3) { await sb.from('turnos').delete().eq('id', tn.id); err.textContent = errMsg(er3); return; }
-        S.sheet = null; await loadTur(); toast('Turno guardado'); break;
+        S.sheet = null; await loadTur(); toast(descM ? 'Turno guardado con ' + descM + '% de descuento por fidelidad (' + money(prF) + ')' : 'Turno guardado'); break;
       }
       case 'cb-start': { var ta = findTurno(S.sheet.id); S.sheet.cobro = { medio: null, monto: Math.max(0, Math.round(+ta.precio - pagado(ta))) }; break; }
       case 'cb-no': S.sheet.cobro = null; break;
@@ -911,7 +1033,14 @@ document.addEventListener('click', async function (e) {
         var ts = findTurno(S.sheet.id);
         await run(sb.from('pagos').insert({ negocio_id: S.neg.id, turno_id: ts.id, monto: ts.senia_requerida, tipo: 'sena', medio: 'transferencia', estado: 'aprobado' }));
         await run(sb.from('turnos').update({ estado_pago: 'sena', vence_en: null }).eq('id', ts.id));
-        S.sheet = null; await loadTur(); toast('Seña confirmada. El turno quedó firme.'); break;
+        S.sheet = { type: 'detail', id: ts.id }; await loadTur(); toast('Seña confirmada. Ahora podés avisarle por WhatsApp.'); break;
+      }
+      case 'wa': case 'wa-dev': {
+        var wt = findTurno(act === 'wa' ? S.sheet.id : id), kind = act === 'wa' ? v : 'dev', wc = wt && S.cli[wt.cliente_id], ph = wc ? waPhone(wc.telefono) : '';
+        if (!ph) { toast('Esta clienta no tiene teléfono cargado'); break; }
+        window.open('https://wa.me/' + ph + '?text=' + encodeURIComponent(waMsg(wt, kind)), '_blank', 'noopener');
+        if (kind !== 'dev') { var up = {}; up[kind === 'rec' ? 'aviso_rec_en' : 'aviso_conf_en'] = new Date().toISOString(); if (kind === 'rec' && !wt.aviso_conf_en) up.aviso_conf_en = up.aviso_rec_en; await run(sb.from('turnos').update(up).eq('id', wt.id)); var keep = S.sheet; await loadTur(); S.sheet = keep; toast('Marcado como avisado'); }
+        break;
       }
       case 'dev-ok': {
         await run(sb.from('pagos').update({ estado: 'reintegrado' }).eq('turno_id', id).eq('estado', 'aprobado'));
@@ -973,8 +1102,9 @@ document.addEventListener('click', async function (e) {
       case 'p-sug': { var pr2 = v.split('|'); S.pb.ds = pr2[0]; S.pb.min = +pr2[1]; S.pb.err = ''; break; }
       case 'p-min': S.pb.min = +v; S.pb.err = ''; break;
       case 'p-submit': {
-        var b = S.pb, pn = $('#p-name').value.trim(), pt = $('#p-tel').value.trim();
+        var b = S.pb, pn = $('#p-name').value.trim(), pt = $('#p-tel').value.trim(); b.name = pn; b.tel = pt;
         if (pn.length < 2) { b.err = 'Escribí tu nombre.'; break; }
+        if (pt.replace(/\D/g, '').length < 8) { b.err = 'Escribí tu teléfono con característica (mínimo 8 números) para poder avisarte.'; break; }
         var slot = pubSlots(b.ds).filter(function (x) { return x.t === b.min; })[0];
         if (!slot) { b.err = 'Ese horario ya no está disponible. Elegí otro.'; b.min = null; break; }
         var mid2 = b.mid === 'any' ? slot.mid : b.mid, mem = S.P.equipo.filter(function (x) { return x.id === mid2; })[0];
@@ -998,6 +1128,12 @@ document.addEventListener('click', async function (e) {
 });
 
 document.addEventListener('change', async function (e) {
+  if (e.target.id === 'p-tel' && S.pb && S.P) {
+    var b0 = S.pb; b0.tel = e.target.value; b0.fid = null;
+    if (S.P.negocio.fid_activa && b0.tel.replace(/\D/g, '').length >= 8) { try { b0.fid = await run(sb.rpc('fidelidad_preview', { p_slug: S.P.negocio.slug, p_telefono: b0.tel })); } catch (x) { } }
+    var bx = document.getElementById('p-fid'); if (bx) bx.innerHTML = fidPreviewHtml(b0);
+    return;
+  }
   if (e.target.id === 'f-svc') { var sv0 = svcOf(e.target.value), fd = $('#f-dur'); if (sv0 && fd) fd.innerHTML = durOpts(sv0.duracion_min); var fp = $('#f-price'); if (fp) fp.value = Math.round(sv0.precio); return; }
   if (e.target.id === 'logo-file') {
     var f = e.target.files && e.target.files[0]; if (!f) return;
@@ -1035,6 +1171,9 @@ document.addEventListener('change', async function (e) {
     else if (k === 'n-alias') { var al = v.trim(); if (al && al.length < 3) { toast('El alias es muy corto'); render(); return; } await run(sb.from('negocios').update({ alias_pago: al || null }).eq('id', S.neg.id)); await loadAll(S.neg.id); }
     else if (k === 'n-hold') { await run(sb.from('negocios').update({ hold_min: +v }).eq('id', S.neg.id)); await loadAll(S.neg.id); }
     else if (k === 'n-cancel') { await run(sb.from('negocios').update({ cancel_horas: +v }).eq('id', S.neg.id)); await loadAll(S.neg.id); }
+    else if (k === 'n-fidcada') { var fc = Math.round(+v); if (isNaN(fc) || fc < 2 || fc > 20) { toast('Tiene que ser entre 2 y 20 turnos'); render(); return; } await run(sb.from('negocios').update({ fid_cada: fc }).eq('id', S.neg.id)); await loadAll(S.neg.id); }
+    else if (k === 'n-fidpct') { var fp2 = Math.round(+v); if (isNaN(fp2) || fp2 < 1 || fp2 > 100) { toast('El descuento tiene que ser entre 1 y 100%'); render(); return; } await run(sb.from('negocios').update({ fid_pct: fp2 }).eq('id', S.neg.id)); await loadAll(S.neg.id); }
+    else if (k === 'c-dni') { await run(sb.from('clientes').update({ dni: String(v).replace(/[^0-9.]/g, '').slice(0, 15) || null }).eq('id', id)); toast('DNI guardado'); return; }
     else if (k === 'n-sena') { var sp = Math.round(+String(v).replace(',', '.')); if (isNaN(sp) || sp < 0 || sp > 100) { toast('La seña tiene que ser entre 0 y 100%'); render(); return; } await run(sb.from('negocios').update({ sena_pct: sp }).eq('id', S.neg.id)); await loadAll(S.neg.id); }
     else if (k === 'suc-n') { var sx = v.trim(); if (sx.length < 2) { toast('El nombre es muy corto'); render(); return; } await run(sb.from('sucursales').update({ nombre: sx }).eq('id', id)); await loadAll(S.neg.id); }
     toast('Guardado');
@@ -1060,5 +1199,6 @@ async function boot() {
     S.user = ses.user; await enter();
   } catch (e) { fail(e); S.route = 'welcome'; render(); }
 }
+document.addEventListener('input', function (e) { var t = e.target; if (S.pb && t && (t.id === 'p-name' || t.id === 'p-tel')) S.pb[t.id === 'p-name' ? 'name' : 'tel'] = t.value; });
 boot();
 })();

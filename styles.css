@@ -264,3 +264,39 @@ a.btn.primary{color:var(--on-accent)}
 .acuerdo{display:grid;gap:8px;margin:10px 0}
 .acuerdo .calc{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .acuerdo .calc select{width:auto;min-width:0}
+
+/* ---------- tarjeta de fidelidad ---------- */
+.fidcard{position:relative;margin-top:14px;padding:18px 16px 16px;border-radius:22px;border:1px solid var(--line);overflow:hidden;
+  background:radial-gradient(120% 90% at 100% 0%,var(--accent-soft) 0%,transparent 60%),var(--surface);box-shadow:0 6px 24px -14px var(--accent)}
+.fidcard::before{content:"";position:absolute;inset:8px;border:1.5px dashed color-mix(in srgb,var(--accent) 35%,transparent);border-radius:16px;pointer-events:none}
+.fhead{display:flex;flex-direction:column;gap:2px;margin-bottom:12px;position:relative}
+.fkick{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.fhead b{font-family:var(--font-d);font-size:20px;line-height:1.15}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(50px,1fr));gap:10px;position:relative;padding:4px 6px}
+.fslot{aspect-ratio:1;border-radius:50%;border:2px dashed var(--line);display:grid;place-items:center;color:var(--muted);font-weight:700;font-size:15px;background:var(--surface);position:relative}
+.fslot .num{opacity:.7}
+.fslot.gift{border-color:var(--p2);color:var(--p2)}
+.fslot .gl{font-size:12px}
+.fslot.on{border:2px solid var(--accent);background:var(--accent-soft)}
+.fslot.on.gift{border-color:var(--p2);background:color-mix(in srgb,var(--p2) 16%,var(--surface))}
+.fslot .stamp{width:100%;height:100%;border-radius:50%;display:grid;place-items:center;color:var(--accent);transform:rotate(-8deg);font-size:12px}
+.fslot.gift .stamp{color:var(--p2)}
+.fslot.new .stamp{animation:stampin .75s cubic-bezier(.2,1.5,.4,1) .35s both}
+.fslot.new::after{content:"";position:absolute;inset:-2px;border-radius:50%;border:3px solid var(--accent);opacity:0;animation:ripple .9s ease-out .55s both}
+.fslot.next{border-color:var(--accent);border-style:dashed;animation:pulse 1.6s ease-in-out infinite}
+@keyframes stampin{0%{transform:scale(2.8) rotate(-35deg);opacity:0}55%{transform:scale(.88) rotate(-8deg);opacity:1}100%{transform:scale(1) rotate(-8deg);opacity:1}}
+@keyframes ripple{0%{transform:scale(.9);opacity:.7}100%{transform:scale(1.7);opacity:0}}
+@keyframes pulse{50%{transform:scale(1.07)}}
+.fmsg{margin:14px 0 4px;position:relative;font-size:15px}
+.firma{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-top:6px;position:relative;transform:rotate(-2deg);transform-origin:left}
+.firma span{font-family:'Caveat',cursive,var(--font-b);font-size:30px;line-height:1;color:var(--accent)}
+.firma small{color:var(--muted);font-size:12px}
+.ffrase{margin:10px 0 0;font-style:italic;color:var(--muted);font-size:14px;position:relative}
+.fidnote{margin:10px 0 0;padding:10px 12px;border-radius:12px;background:var(--accent-soft);font-size:14px}
+.fidnote.gift{border:1.5px solid var(--p2)}
+.fmini{display:flex;align-items:center;gap:5px;margin:6px 0 10px}
+.fmini i{width:14px;height:14px;border-radius:50%;border:2px solid var(--line);display:inline-block}
+.fmini i.on{background:var(--accent);border-color:var(--accent)}
+.fmini small{margin-left:6px;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){.fslot.new .stamp,.fslot.new::after,.fslot.next{animation:none}}
+.lines b{white-space:nowrap}
