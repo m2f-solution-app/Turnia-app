@@ -130,7 +130,7 @@ async function subirLogo(blob) {
 var DURS = [10, 15, 20, 25, 30, 40, 45, 50, 60, 75, 90, 105, 120, 135, 150, 180, 210, 240];
 function durOpts(sel) { var l = DURS.slice(); if (sel && l.indexOf(sel) < 0) { l.push(sel); l.sort(function (a, b) { return a - b; }); } return l.map(function (m) { return '<option value="' + m + '"' + (m === sel ? ' selected' : '') + '>' + m + ' min</option>'; }).join(''); }
 function senaFields(n) {
-  return '<label>Seña al reservar<select data-bind="n-sena">' + [0, 20, 30, 50].map(function (p) { return '<option value="' + p + '"' + (p === n.sena_pct ? ' selected' : '') + '>' + (p ? p + '% del servicio' : 'Sin seña') + '</option>'; }).join('') + '</select></label>' +
+  return '<label>Seña al reservar (% del total, 0 = sin seña)<input type="number" inputmode="numeric" min="0" max="100" step="1" data-bind="n-sena" value="' + (+n.sena_pct || 0) + '" placeholder="30"></label>' +
     '<label>Tu alias para recibir la seña<input data-bind="n-alias" value="' + esc(n.alias_pago || '') + '" placeholder="ej: lu.nails.mp" autocomplete="off"></label>' +
     '<div class="two"><label>Tiempo para pagar la seña<select data-bind="n-hold">' + [30, 60, 120].map(function (m) { return '<option value="' + m + '"' + (m === n.hold_min ? ' selected' : '') + '>' + durTxt(m) + '</option>'; }).join('') + '</select></label>' +
     '<label>Devolver la seña si cancela con<select data-bind="n-cancel">' + [12, 24, 48].map(function (h) { return '<option value="' + h + '"' + (h === n.cancel_horas ? ' selected' : '') + '>' + h + ' h de anticipación</option>'; }).join('') + '</select></label></div>' +
@@ -1035,7 +1035,7 @@ document.addEventListener('change', async function (e) {
     else if (k === 'n-alias') { var al = v.trim(); if (al && al.length < 3) { toast('El alias es muy corto'); render(); return; } await run(sb.from('negocios').update({ alias_pago: al || null }).eq('id', S.neg.id)); await loadAll(S.neg.id); }
     else if (k === 'n-hold') { await run(sb.from('negocios').update({ hold_min: +v }).eq('id', S.neg.id)); await loadAll(S.neg.id); }
     else if (k === 'n-cancel') { await run(sb.from('negocios').update({ cancel_horas: +v }).eq('id', S.neg.id)); await loadAll(S.neg.id); }
-    else if (k === 'n-sena') { await run(sb.from('negocios').update({ sena_pct: +v }).eq('id', S.neg.id)); await loadAll(S.neg.id); }
+    else if (k === 'n-sena') { var sp = Math.round(+String(v).replace(',', '.')); if (isNaN(sp) || sp < 0 || sp > 100) { toast('La seña tiene que ser entre 0 y 100%'); render(); return; } await run(sb.from('negocios').update({ sena_pct: sp }).eq('id', S.neg.id)); await loadAll(S.neg.id); }
     else if (k === 'suc-n') { var sx = v.trim(); if (sx.length < 2) { toast('El nombre es muy corto'); render(); return; } await run(sb.from('sucursales').update({ nombre: sx }).eq('id', id)); await loadAll(S.neg.id); }
     toast('Guardado');
   } catch (er) { fail(er); try { await loadAll(S.neg.id); } catch (x) { } }
