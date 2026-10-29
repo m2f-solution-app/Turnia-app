@@ -46,7 +46,8 @@ var IC = {
 };
 function ico(k) { return '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">' + IC[k] + '</svg>'; }
 function logo(s) {
-  return '<svg class="logo" width="' + s + '" height="' + s + '" viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="14" fill="var(--accent)"/><rect x="10" y="13" width="28" height="25" rx="7" fill="var(--on-accent)"/><path d="M17 9.5v6M31 9.5v6" stroke="var(--on-accent)" stroke-width="3" stroke-linecap="round"/><path d="M24 20v8l5 3" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>';
+  var src = s >= 72 ? 'img/logo.png' : 'img/icon-192.png';
+  return '<img class="logo turnia" width="' + s + '" height="' + s + '" src="' + src + '" alt="Turnia">';
 }
 function chip(act, label, pressed, data) { return '<button class="chip" data-act="' + act + '" ' + (data || '') + ' aria-pressed="' + (pressed ? 'true' : 'false') + '">' + label + '</button>'; }
 function artFor(k) { return '<div class="art" aria-hidden="true">' + (ART[k] || ART.neutral).map(function (p) { return '<svg class="' + p[0] + '" viewBox="0 0 300 300">' + p[1] + '</svg>'; }).join('') + '</div>'; }

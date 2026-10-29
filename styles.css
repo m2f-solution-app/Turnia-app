@@ -231,3 +231,4 @@ main{display:grid;gap:16px;min-width:0;align-content:start}
 .tour .ico{flex:none;width:22px;height:22px;margin-top:2px;fill:none;stroke:var(--accent);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .tour b{display:block}
 .card.note{margin-top:12px;background:var(--surface2)}
+.logo.turnia{object-fit:contain;border-radius:0;background:none}
