@@ -83,8 +83,8 @@ function tmin(t) { var a = String(t).split(':'); return (+a[0]) * 60 + (+a[1]); 
 function slugify(s) { return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60); }
 
 /* ---------- estado ---------- */
-var S = { route: 'boot', rubro: 'manicura', tiene: false, authMode: 'signup', authMsg: '', authBusy: false, cf: { n: '', s: '', edited: false, err: '' },
-  seed: true, user: null, neg: null, suc: [], mie: [], hor: [], srv: [], sm: [], tab: 'agenda', ds: null, win: 0, tur: [], sheet: null, acct: false,
+var S = { route: 'boot', rubro: 'manicura', tiene: false, authMode: 'signup', authMsg: '', af: { name: '', mail: '', pass: '' }, authBusy: false, cf: { n: '', s: '', edited: false, err: '', logoBlob: null, logoPrev: '' },
+  seed: true, ob: { step: 0 }, user: null, neg: null, suc: [], mie: [], hor: [], srv: [], sm: [], tab: 'agenda', ds: null, win: 0, tur: [], sheet: null, acct: false,
   P: null, pb: null, seen: false, seenR: false };
 
 function TZ() { return (S.neg && S.neg.zona_horaria) || (S.P && S.P.negocio.zona_horaria) || DEFAULT_TZ; }
@@ -94,10 +94,38 @@ function errMsg(e) {
   if (c === '23P01') return 'Ya hay un turno en ese horario.';
   if (c === '23503') return 'Tiene datos asociados (por ejemplo turnos). Ocultalo en vez de eliminarlo.';
   if (c === '42501') return 'No tenés permiso para hacer eso.';
+  if (e && /failed to fetch|networkerror|load failed/i.test(e.message || '')) return 'No hay conexión con el servidor. Revisá tu internet y probá de nuevo en un momento.';
   return (e && e.message) || 'Algo salió mal. Probá de nuevo.';
 }
 async function run(p) { var r = await p; if (r.error) throw r.error; return r.data; }
 function fail(e) { console.error(e); toast(errMsg(e)); }
+
+function bizLogo(sz) {
+  if (S.neg && S.neg.logo_url) return '<img class="logo biz" width="' + sz + '" height="' + sz + '" src="' + esc(S.neg.logo_url) + '" alt="Logo de ' + esc(S.neg.nombre) + '">';
+  return logo(sz);
+}
+function resizeImg(file, max) {
+  return new Promise(function (res, rej) {
+    var u = URL.createObjectURL(file), im = new Image();
+    im.onload = function () {
+      var r = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(im.width * r)); c.height = Math.max(1, Math.round(im.height * r));
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u);
+      c.toBlob(function (b) { b ? res(b) : rej(new Error('No se pudo procesar la imagen')); }, 'image/png');
+    };
+    im.onerror = function () { rej(new Error('No se pudo leer la imagen. Probá con un PNG o JPG.')); };
+    im.src = u;
+  });
+}
+async function subirLogo(blob) {
+  var path = S.neg.id + '/logo-' + Date.now() + '.png';
+  var r = await sb.storage.from('logos').upload(path, blob, { contentType: 'image/png' });
+  if (r.error) throw r.error;
+  var url = sb.storage.from('logos').getPublicUrl(path).data.publicUrl;
+  await run(sb.from('negocios').update({ logo_url: url }).eq('id', S.neg.id));
+  S.neg.logo_url = url;
+}
+function hrSel(sel, key, id) { var o = ''; for (var h = 6; h <= 23; h++) o += '<option value="' + (h * 60) + '"' + (h * 60 === sel ? ' selected' : '') + '>' + h + ':00</option>'; return '<select data-bind="' + key + '" data-id="' + id + '">' + o + '</select>'; }
 
 /* ---------- datos ---------- */
 async function loadAll(id) {
@@ -115,6 +143,7 @@ async function loadAll(id) {
   S.rubro = S.neg.rubro;
 }
 async function loadTur() {
+  if (!S.ds) S.ds = todayDs(TZ());
   var tz = TZ(), a = zonedToUtc(S.ds, 0, tz).toISOString(), b = zonedToUtc(addDays(S.ds, 1), 0, tz).toISOString();
   S.tur = await run(sb.from('turnos').select('*').eq('negocio_id', S.neg.id).gte('inicio', a).lt('inicio', b).neq('estado', 'cancelado').order('inicio'));
 }
@@ -139,8 +168,9 @@ async function enter() {
     var m = await run(sb.from('miembros').select('negocio_id,rol').eq('user_id', S.user.id).eq('activo', true).limit(1));
     if (!m.length) { S.route = 'crear'; render(); return; }
     await loadAll(m[0].negocio_id);
-    S.route = 'app'; S.tab = 'agenda'; S.ds = todayDs(TZ()); S.win = 0;
-    await loadTur(); render();
+    S.ds = todayDs(TZ()); S.win = 0; S.tab = 'agenda';
+    if (!S.neg.onboarding_listo) { S.ob = { step: 0 }; S.route = 'onb'; render(); return; }
+    S.route = 'app'; await loadTur(); render();
   } catch (e) { fail(e); S.route = 'welcome'; render(); }
 }
 
@@ -193,26 +223,81 @@ function authView() {
   return '<div class="start still">' + artFor(S.rubro) + topbar(S.tiene === null ? 'welcome' : 'roles') + '<span class="intro-logo">' + logo(64) + '</span>' +
     '<h1 class="hello" style="font-size:clamp(26px,7vw,38px)">' + (su ? 'Creá tu cuenta' : 'Ingresá a <em>Turnia</em>') + '</h1>' +
     '<div class="card staff authcard"><div class="chips">' + chip('auth-mode', 'Crear cuenta', su, 'data-v="signup"') + chip('auth-mode', 'Ya tengo cuenta', !su, 'data-v="login"') + '</div>' +
-    (su ? '<label>Tu nombre<input id="a-name" autocomplete="name" placeholder="Nombre y apellido"></label>' : '') +
-    '<label>Email<input id="a-mail" type="email" autocomplete="email" placeholder="vos@mail.com"></label>' +
-    '<label>Contraseña<input id="a-pass" type="password" autocomplete="' + (su ? 'new-password' : 'current-password') + '" placeholder="Mínimo 6 caracteres"></label>' +
+    (su ? '<label>Tu nombre<input id="a-name" autocomplete="name" placeholder="Nombre y apellido" value="' + esc(S.af.name) + '"></label>' : '') +
+    '<label>Email<input id="a-mail" type="email" autocomplete="email" placeholder="vos@mail.com" value="' + esc(S.af.mail) + '"></label>' +
+    '<label>Contraseña<input id="a-pass" type="password" autocomplete="' + (su ? 'new-password' : 'current-password') + '" placeholder="Mínimo 6 caracteres" value="' + esc(S.af.pass) + '"></label>' +
     (S.authMsg ? '<p class="msg" role="status">' + esc(S.authMsg) + '</p>' : '') +
-    '<div class="row"><button class="btn primary" data-act="auth-submit"' + (S.authBusy ? ' disabled' : '') + '>' + (su ? 'Crear cuenta' : 'Ingresar') + '</button></div></div></div>';
+    '<div class="row"><button class="btn primary" data-act="auth-submit"' + (S.authBusy ? ' disabled aria-busy="true"' : '') + '>' + (S.authBusy ? '<span class="spin"></span>' + (su ? 'Creando tu cuenta…' : 'Ingresando…') : (su ? 'Crear cuenta' : 'Ingresar')) + '</button></div></div></div>';
 }
 function crearView() {
   var R = RUBROS[S.rubro], ks = ['manicura', 'peluqueria', 'barberia'];
-  var base = location.origin + location.pathname;
   return '<div class="start still">' + artFor(S.rubro) + '<div class="startbar"><button class="chip" data-act="logout">Salir</button>' + themeChips() + '</div>' +
     '<span class="intro-logo">' + logo(64) + '</span><h1 class="hello" style="font-size:clamp(26px,7vw,38px)">Creá tu negocio</h1>' +
+    '<p class="sub">Solo necesitamos el nombre. Después te voy guiando para configurar el resto.</p>' +
     '<div class="card staff authcard">' +
     '<div class="group"><span class="lbl">Rubro</span><div class="chips">' + ks.map(function (k) { return chip('c-rubro', RUBROS[k].label, S.rubro === k, 'data-v="' + k + '"'); }).join('') + '</div></div>' +
     '<label>Nombre del negocio<input id="c-n" value="' + esc(S.cf.n) + '" placeholder="' + esc(R.ph) + '" autocomplete="off"></label>' +
-    '<label>Dirección del link<input id="c-s" value="' + esc(S.cf.s) + '" placeholder="lu-nails-studio" autocomplete="off"></label>' +
-    '<p class="hint" id="c-prev">' + esc(base) + '?n=' + esc(S.cf.s || 'tu-negocio') + '</p>' +
+    '<div class="group"><span class="lbl">Logo (opcional)</span><div class="logorow">' +
+    (S.cf.logoPrev ? '<img class="biz" width="64" height="64" src="' + S.cf.logoPrev + '" alt="Logo elegido">' : '<span class="biz ph">' + ico('sparkle') + '</span>') +
+    '<label class="btn filebtn">' + (S.cf.logoPrev ? 'Cambiar logo' : 'Subir logo') + '<input id="logo-file" type="file" accept="image/png,image/jpeg,image/webp" hidden></label></div></div>' +
     '<div class="group"><span class="lbl">Estructura</span><div class="chips">' + chip('c-tiene', 'Un solo local', !S.tiene, 'data-v="0"') + chip('c-tiene', 'Varias sucursales', S.tiene, 'data-v="1"') + '</div></div>' +
-    '<div class="group"><span class="lbl">Para empezar</span><div class="chips">' + chip('c-seed', 'Cargar servicios de ejemplo', S.seed) + '</div><p class="hint">Agrega 4 servicios típicos del rubro y deja tu agenda abierta de lunes a sábado, de 9 a 19. Después lo cambiás.</p></div>' +
     (S.cf.err ? '<p class="msg" role="alert">' + esc(S.cf.err) + '</p>' : '') +
-    '<div class="row"><button class="btn primary" data-act="c-submit"' + (S.authBusy ? ' disabled' : '') + '>Crear negocio</button></div></div></div>';
+    '<div class="row"><button class="btn primary" data-act="c-submit"' + (S.authBusy ? ' disabled aria-busy="true"' : '') + '>' + (S.authBusy ? '<span class="spin"></span>Creando tu negocio…' : 'Crear negocio') + '</button></div></div></div>';
+}
+
+/* ---------- guía de configuración ---------- */
+var OB = ['logo', 'servicios', 'horarios', 'equipo', 'cobros', 'link', 'panel'];
+function obView() {
+  var o = S.ob, n = S.neg, R = RUBROS[n.rubro], own = S.mie[0], k = o.step;
+  var bar = '<div class="startbar"><span></span>' + themeChips() + '</div>';
+  if (k === 0) return '<div class="start still">' + artFor(n.rubro) + bar + '<span class="intro-logo">' + bizLogo(88) + '</span>' +
+    '<h1 class="hello">¡Bienvenido, <em>' + esc(n.nombre) + '</em>!</h1>' +
+    '<p class="sub">Ahora te ayudo a configurar tu negocio. Son ' + OB.length + ' pasos cortos: logo, servicios, horarios, equipo, cobros, tu link y un recorrido por el panel. Todo se puede cambiar después.</p>' +
+    '<div class="row cen"><button class="btn primary" data-act="ob-next">Empezar</button><button class="btn" data-act="ob-skip">Lo hago después</button></div></div>';
+  var key = OB[k - 1], body = '', title = '', hint = '';
+  if (key === 'logo') {
+    title = 'Tu logo'; hint = 'Se muestra en tu panel y en la página donde tus clientes reservan. Podés saltear este paso.';
+    body = '<div class="logorow">' + (n.logo_url ? '<img class="biz" width="72" height="72" src="' + esc(n.logo_url) + '" alt="Tu logo">' : '<span class="biz ph" style="width:72px;height:72px">' + ico('sparkle') + '</span>') +
+      '<label class="btn filebtn">' + (n.logo_url ? 'Cambiar logo' : 'Subir logo') + '<input id="logo-file" type="file" accept="image/png,image/jpeg,image/webp" hidden></label></div>';
+  } else if (key === 'servicios') {
+    title = 'Tus servicios'; hint = 'Es lo que tus clientes van a poder elegir. La duración ordena la agenda y el precio alimenta las finanzas.';
+    var have = S.srv.map(function (x) { return x.nombre; });
+    var sug = R.servicios.map(function (x, i) { return have.indexOf(x[0]) > -1 ? '' : chip('ob-sug', esc(x[0]) + ' · ' + x[1] + ' min · ' + money(x[2]), false, 'data-i="' + i + '"'); }).join('');
+    var mins = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180];
+    body = (S.srv.length ? '<ul class="oblist">' + S.srv.map(function (x) { return '<li><span><b>' + esc(x.nombre) + '</b> · ' + x.duracion_min + ' min · ' + money(x.precio) + '</span><button class="chip" data-act="ob-svc-del" data-id="' + x.id + '" aria-label="Quitar ' + esc(x.nombre) + '">Quitar</button></li>'; }).join('') + '</ul>' : '<p class="muted">Todavía no cargaste ninguno.</p>') +
+      (sug ? '<div class="group"><span class="lbl">Sugeridos para ' + esc(R.label.toLowerCase()) + ' (tocá para sumar)</span><div class="chips">' + sug + '</div></div>' : '') +
+      '<div class="group"><span class="lbl">Cargar uno propio</span><label>Nombre<input id="sv-n" placeholder="Ej: Pedicuría spa" autocomplete="off"></label><div class="two"><label>Duración<select id="sv-min">' + mins.map(function (m) { return '<option value="' + m + '"' + (m === 60 ? ' selected' : '') + '>' + m + ' min</option>'; }).join('') + '</select></label><label>Precio ($)<input id="sv-p" inputmode="numeric" placeholder="12000"></label></div><p class="err" id="sv-err" role="alert"></p><div class="row"><button class="btn" data-act="ob-svc-add">Agregar</button></div></div>';
+  } else if (key === 'horarios') {
+    title = 'Tus horarios'; hint = 'Marcá los días que atendés y el horario. Los turnos online solo se ofrecen dentro de este horario.';
+    var sc = sched(own.id), order = [1, 2, 3, 4, 5, 6, 0], ab = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+    body = '<div class="days chips">' + order.map(function (d) { return '<button class="chip" data-act="m-day" data-id="' + own.id + '" data-v="' + d + '" aria-label="' + DOWL[d] + '" aria-pressed="' + (sc.days.indexOf(d) > -1) + '">' + ab[d] + '</button>'; }).join('') + '</div>' +
+      '<div class="two"><label>Entrás' + hrSel(sc.from, 'm-from', own.id) + '</label><label>Salís' + hrSel(sc.to, 'm-to', own.id) + '</label></div>';
+  } else if (key === 'equipo') {
+    title = n.tiene_sucursales ? 'Sucursales y equipo' : 'Tu equipo'; hint = 'Sumá a quienes atienden con vos. Cada uno tendrá su columna en la agenda. Podés ajustar sus días y horarios después, en Equipo.';
+    var others = S.mie.filter(function (m) { return m.rol !== 'dueno'; });
+    body = (n.tiene_sucursales ? '<div class="group"><span class="lbl">Sucursales</span>' + S.suc.map(function (x) { return '<label>Nombre<input data-bind="suc-n" data-id="' + x.id + '" value="' + esc(x.nombre) + '"></label>'; }).join('') + '<div class="row"><button class="btn" data-act="suc-add">+ Agregar sucursal</button></div></div>' : '') +
+      '<div class="group"><span class="lbl">Profesionales</span>' + (others.length ? others.map(function (m) { return '<div class="obrow"><input data-bind="m-nombre" data-id="' + m.id + '" value="' + esc(m.nombre) + '" aria-label="Nombre"><button class="chip" data-act="m-del" data-id="' + m.id + '">Quitar</button></div>'; }).join('') : '<p class="muted">Trabajás solo o sola por ahora. Está bien, podés sumar gente cuando quieras.</p>') +
+      '<div class="row"><button class="btn" data-act="m-add">+ Agregar profesional</button></div></div>';
+  } else if (key === 'cobros') {
+    title = 'Cómo vas a cobrar'; hint = 'Por ahora cobrás en el local y marcás cada turno como cobrado desde la agenda. Con eso, Finanzas ya suma lo que entra.';
+    body = '<label>Seña al reservar<select data-bind="n-sena">' + [0, 20, 30, 50].map(function (p) { return '<option value="' + p + '"' + (p === n.sena_pct ? ' selected' : '') + '>' + (p ? p + '% del servicio' : 'Sin seña') + '</option>'; }).join('') + '</select></label>' +
+      '<div class="card note"><b>Mercado Pago</b><p class="muted small">Lo conectamos en uno de los próximos pasos para que la seña se cobre sola al reservar. Mientras tanto, la seña queda registrada como pendiente y la confirmás vos.</p></div>';
+  } else if (key === 'link') {
+    title = 'Tu link de reservas'; hint = 'Es la dirección que le pasás a tus clientes por Instagram o WhatsApp. Elegí una fácil de recordar.';
+    body = '<label>Dirección<input data-bind="ob-slug" value="' + esc(n.slug) + '" autocomplete="off"></label><p class="hint url">' + esc(pubUrl()) + '</p>' +
+      '<div class="row"><button class="btn" data-act="copy" data-v="' + esc(pubUrl()) + '">Copiar link</button><a class="btn" href="' + esc(pubUrl(n.tiene_sucursales && S.suc[0] ? S.suc[0].slug : '')) + '" target="_blank" rel="noopener">Verlo como cliente</a></div>';
+  } else if (key === 'panel') {
+    title = 'Conocé tu panel'; hint = 'Así se usa día a día:';
+    body = '<ul class="tour"><li>' + ico('calendar') + '<span><b>Agenda</b>Ves los turnos del día por profesional. Tocá un hueco libre para cargar uno, o un turno para cobrarlo o cancelarlo.</span></li>' +
+      '<li>' + ico('users') + '<span><b>Equipo</b>Días, horarios y comisión de cada persona, y quién atiende por el link.</span></li>' +
+      '<li>' + ico('scissors') + '<span><b>Servicios</b>Nombre, duración y precio de lo que ofrecés.</span></li>' +
+      '<li>' + ico('gear') + '<span><b>Ajustes</b>Tu link, la seña y los datos del negocio. Desde acá podés volver a abrir esta guía.</span></li></ul>';
+  }
+  var last = k === OB.length;
+  return '<div class="start still">' + artFor(n.rubro) + bar + '<div class="card staff authcard obcard"><div class="obprog" aria-label="Paso ' + k + ' de ' + OB.length + '">' + OB.map(function (_, i) { return '<i class="' + (i < k ? 'on' : '') + '"></i>'; }).join('') + '</div>' +
+    '<p class="small muted">Paso ' + k + ' de ' + OB.length + '</p><h2>' + title + '</h2><p class="muted">' + hint + '</p>' + body +
+    '<div class="row obnav"><button class="btn" data-act="ob-back">Atrás</button>' + (last ? '' : '<button class="btn" data-act="ob-next" data-skip="1">Saltar</button>') +
+    '<button class="btn primary" data-act="' + (last ? 'ob-finish' : 'ob-next') + '">' + (last ? 'Ir a mi agenda' : 'Siguiente') + '</button></div></div></div>';
 }
 
 /* ---------- vistas: panel ---------- */
@@ -222,7 +307,7 @@ function shell() {
   var acct = S.acct ? '<div class="card acct"><div><b>' + esc(S.neg.nombre) + '</b><div class="small muted">' + esc(S.user && S.user.email || '') + '</div></div>' +
     '<div class="group"><span class="lbl">Apariencia</span>' + themeChips() + '</div><button class="btn" data-act="logout">Cerrar sesión</button></div>' : '';
   var body = { agenda: agendaView, equipo: equipoView, servicios: serviciosView, ajustes: ajustesView }[S.tab]();
-  return '<div class="top"><div class="l">' + logo(36) + '<div><div class="nm">Turnia</div><div class="sub">' + esc(S.neg.nombre) + '</div></div></div>' +
+  return '<div class="top"><div class="l">' + bizLogo(36) + '<div><div class="nm">Turnia</div><div class="sub">' + esc(S.neg.nombre) + '</div></div></div>' +
     '<div class="r"><button class="chip" data-act="acct" aria-expanded="' + S.acct + '" style="display:flex;align-items:center;gap:6px">' + ico('gear') + 'Cuenta</button></div>' + acct + '</div>' +
     '<div class="shell"><nav class="nav" aria-label="Secciones">' + nav + '</nav><main>' + body + '</main></div>' + (S.sheet ? sheetView() : '');
 }
@@ -310,6 +395,7 @@ function ajustesView() {
   return '<div class="head"><h2>Ajustes</h2></div>' +
     '<div class="card staff"><h3>Tu link de reservas</h3>' + links + '<p class="muted small">Pegalo en Instagram, WhatsApp o Google. Tus clientes reservan desde ahí, sin instalar nada ni crear cuenta.</p>' +
     '<div class="row"><a class="btn" href="' + esc(pubUrl(n.tiene_sucursales && S.suc[0] ? S.suc[0].slug : '')) + '" target="_blank" rel="noopener">Ver como cliente</a></div></div>' +
+    '<div class="card staff"><h3>Guía de configuración</h3><p class="muted small">Repasá logo, servicios, horarios, equipo, cobros y link paso a paso.</p><div class="row"><button class="btn" data-act="ob-guia">Abrir la guía</button></div></div>' +
     '<div class="card staff"><h3>Negocio</h3><label>Nombre<input data-bind="n-nombre" value="' + esc(n.nombre) + '"></label>' +
     '<label>Seña al reservar<select data-bind="n-sena">' + [0, 20, 30, 50].map(function (p) { return '<option value="' + p + '"' + (p === n.sena_pct ? ' selected' : '') + '>' + (p ? p + '% del servicio' : 'Sin seña') + '</option>'; }).join('') + '</select></label>' +
     '<p class="hint">El cobro de la seña con Mercado Pago llega en un próximo paso. Por ahora queda guardada la preferencia.</p></div>' + sucs;
@@ -368,7 +454,7 @@ function pubSlots() {
 function pubView() {
   var d = S.P;
   if (!d) return '<div class="pubwrap"><div class="pubhead">' + logo(40) + '<div class="nm">Turnia</div></div><div class="card staff"><h3>No encontramos este local</h3><p class="muted">Revisá que el link esté completo o pedile uno nuevo al local.</p></div></div>';
-  var b = S.pb, tz = d.negocio.zona_horaria, hdr = '<div class="pubhead">' + logo(40) + '<div><div class="nm">' + esc(d.negocio.nombre) + '</div><div class="small muted">Reservá tu turno online</div></div></div>';
+  var b = S.pb, tz = d.negocio.zona_horaria, hdr = '<div class="pubhead">' + (d.negocio.logo_url ? '<img class="logo biz" width="40" height="40" src="' + esc(d.negocio.logo_url) + '" alt="">' : logo(40)) + '<div><div class="nm">' + esc(d.negocio.nombre) + '</div><div class="small muted">Reservá tu turno online</div></div></div>';
   if (b.done) {
     var l = utcToLocal(b.done.inicio, tz), sv = d.servicios.filter(function (x) { return x.id === b.svc; })[0];
     return artFor(d.negocio.rubro) + '<div class="pubwrap">' + hdr + '<div class="card staff"><h2>¡Turno reservado!</h2><p><b>' + esc(sv ? sv.nombre : 'Servicio') + '</b> · ' + dlong(l.ds) + ' a las ' + hhm(l.min) + '</p>' +
@@ -401,7 +487,7 @@ function pubView() {
 function render() {
   var rb = S.rubro;
   if (S.route === 'welcome' || S.route === 'boot') rb = '';
-  if (S.route === 'app' && S.neg) rb = S.neg.rubro;
+  if ((S.route === 'app' || S.route === 'onb') && S.neg) rb = S.neg.rubro;
   if (S.route === 'pub' && S.P) rb = S.P.negocio.rubro;
   if (rb === 'barberia') document.documentElement.setAttribute('data-rubro', 'barberia'); else document.documentElement.removeAttribute('data-rubro');
   var h = '';
@@ -413,6 +499,7 @@ function render() {
     case 'info-pro': case 'info-cli': h = infoView(); break;
     case 'auth': h = authView(); break;
     case 'crear': h = crearView(); break;
+    case 'onb': h = obView(); break;
     case 'app': h = shell(); break;
     case 'pub': h = pubView(); break;
   }
@@ -465,15 +552,17 @@ document.addEventListener('click', async function (e) {
         else { S.tiene = (v === 'cadena'); S.authMode = 'signup'; S.authMsg = ''; S.route = 'auth'; }
         break;
       case 'cli-go': { var code = slugify($('#cli-code').value); if (!code) { toast('Escribí el código del local'); return; } location.href = location.pathname + '?n=' + code; return; }
-      case 'auth-mode': S.authMode = v; S.authMsg = ''; break;
+      case 'auth-mode': saveAF(); S.authMode = v; S.authMsg = ''; break;
       case 'auth-submit': {
-        var mail = $('#a-mail').value.trim(), pass = $('#a-pass').value, su = S.authMode === 'signup';
+        saveAF(); var mail = S.af.mail.trim(), pass = S.af.pass, su = S.authMode === 'signup';
         if (!/^\S+@\S+\.\S+$/.test(mail)) { S.authMsg = 'Revisá el email.'; break; }
         if (pass.length < 6) { S.authMsg = 'La contraseña debe tener al menos 6 caracteres.'; break; }
         S.authBusy = true; S.authMsg = ''; render();
-        var r = su ? await sb.auth.signUp({ email: mail, password: pass, options: { data: { full_name: ($('#a-name') && $('#a-name').value.trim()) || '' } } }) : await sb.auth.signInWithPassword({ email: mail, password: pass });
+        var r;
+        try { r = su ? await sb.auth.signUp({ email: mail, password: pass, options: { emailRedirectTo: location.origin + location.pathname, data: { full_name: ($('#a-name') && $('#a-name').value.trim()) || '' } } }) : await sb.auth.signInWithPassword({ email: mail, password: pass }); }
+        catch (ex) { r = { error: ex }; }
         S.authBusy = false;
-        if (r.error) { S.authMsg = /Invalid login/i.test(r.error.message) ? 'Email o contraseña incorrectos.' : r.error.message; break; }
+        if (r.error) { var em = r.error.message || ''; S.authMsg = /Invalid login/i.test(em) ? 'Email o contraseña incorrectos.' : /already registered|already been registered/i.test(em) ? 'Ese mail ya tiene cuenta. Tocá "Ya tengo cuenta" para ingresar.' : /rate limit/i.test(em) ? 'Demasiados intentos. Esperá unos minutos y probá de nuevo.' : errMsg(r.error); break; }
         if (r.data && r.data.session) { S.user = r.data.session.user; await enter(); return; }
         S.authMsg = 'Te mandamos un mail para confirmar la cuenta. Abrilo y después volvé acá a ingresar.'; S.authMode = 'login'; break;
       }
@@ -483,19 +572,45 @@ document.addEventListener('click', async function (e) {
       case 'c-seed': saveCF(); S.seed = !S.seed; break;
       case 'c-submit': {
         saveCF();
-        var nom = S.cf.n.trim(), slg = slugify(S.cf.s);
+        var nom = S.cf.n.trim();
         if (nom.length < 2) { S.cf.err = 'Escribí el nombre del negocio.'; break; }
-        if (slg.length < 3) { S.cf.err = 'La dirección del link debe tener al menos 3 letras o números.'; break; }
-        S.cf.s = slg; S.cf.err = ''; S.authBusy = true; render();
+        S.cf.err = ''; S.authBusy = true; render();
         try {
-          var neg = await run(sb.from('negocios').insert({ nombre: nom, slug: slg, rubro: S.rubro, tiene_sucursales: !!S.tiene }).select().single());
+          var base = slugify(nom); if (base.length < 3) base = 'negocio-' + Math.random().toString(36).slice(2, 6);
+          var neg = null, intento = 0;
+          while (!neg) {
+            try { neg = await run(sb.from('negocios').insert({ nombre: nom, slug: intento ? base.slice(0, 54) + '-' + Math.random().toString(36).slice(2, 5) : base, rubro: S.rubro, tiene_sucursales: !!S.tiene }).select().single()); }
+            catch (er2) { if (er2.code === '23505' && ++intento < 5) continue; throw er2; }
+          }
           await loadAll(neg.id);
-          if (S.seed) await sembrar();
-          await loadAll(neg.id);
-          S.authBusy = false; S.route = 'app'; S.tab = 'agenda'; S.ds = todayDs(TZ()); S.win = 0; await loadTur(); toast('¡Listo! Tu negocio está creado.');
-        } catch (er) { S.authBusy = false; S.cf.err = er.code === '23505' ? 'Ese link ya está usado. Probá con otro.' : errMsg(er); }
+          await setSched(S.mie[0].id, [1, 2, 3, 4, 5, 6], 540, 1140);
+          if (S.cf.logoBlob) { try { await subirLogo(S.cf.logoBlob); } catch (ex) { toast('No se pudo subir el logo. Lo podés cargar en la guía.'); } }
+          S.cf.logoBlob = null; S.cf.logoPrev = '';
+          S.authBusy = false; S.ob = { step: 0 }; S.route = 'onb'; S.ds = todayDs(TZ());
+        } catch (er) { S.authBusy = false; S.cf.err = errMsg(er); }
         break;
       }
+      case 'ob-next': S.ob.step = Math.min(OB.length, S.ob.step + 1); break;
+      case 'ob-back': S.ob.step = Math.max(0, S.ob.step - 1); break;
+      case 'ob-skip': case 'ob-finish':
+        await run(sb.from('negocios').update({ onboarding_listo: true }).eq('id', S.neg.id)); S.neg.onboarding_listo = true;
+        S.route = 'app'; S.tab = 'agenda'; S.ds = todayDs(TZ()); S.win = 0; await loadTur();
+        if (act === 'ob-finish') toast('¡Listo! Tu negocio está configurado.'); break;
+      case 'ob-sug': {
+        var sg = RUBROS[S.neg.rubro].servicios[+t.dataset.i];
+        var ns2 = await run(sb.from('servicios').insert({ negocio_id: S.neg.id, nombre: sg[0], duracion_min: sg[1], precio: sg[2], orden: S.srv.length }).select().single());
+        if (S.mie.length) await run(sb.from('servicio_miembros').insert(S.mie.map(function (x) { return { negocio_id: S.neg.id, servicio_id: ns2.id, miembro_id: x.id }; })));
+        await loadAll(S.neg.id); break;
+      }
+      case 'ob-svc-add': {
+        var on = $('#sv-n').value.trim(), omin = +$('#sv-min').value, op = parseInt($('#sv-p').value.replace(/\D/g, ''), 10), oer = $('#sv-err');
+        if (!on || !op) { oer.textContent = 'Completá el nombre y un precio en números.'; return; }
+        var ns3 = await run(sb.from('servicios').insert({ negocio_id: S.neg.id, nombre: on, duracion_min: omin, precio: op, orden: S.srv.length }).select().single());
+        if (S.mie.length) await run(sb.from('servicio_miembros').insert(S.mie.map(function (x) { return { negocio_id: S.neg.id, servicio_id: ns3.id, miembro_id: x.id }; })));
+        await loadAll(S.neg.id); break;
+      }
+      case 'ob-svc-del': await run(sb.from('servicios').delete().eq('id', id)); await loadAll(S.neg.id); break;
+      case 'ob-guia': S.ob = { step: 1 }; S.route = 'onb'; break;
       case 'tab': S.tab = v; S.acct = false; S.sheet = null; break;
       case 'acct': S.acct = !S.acct; break;
       case 'win': S.win += +v; break;
@@ -574,6 +689,15 @@ document.addEventListener('click', async function (e) {
 });
 
 document.addEventListener('change', async function (e) {
+  if (e.target.id === 'logo-file') {
+    var f = e.target.files && e.target.files[0]; if (!f) return;
+    try {
+      var blob = await resizeImg(f, 512);
+      if (S.route === 'crear') { S.cf.logoBlob = blob; S.cf.logoPrev = URL.createObjectURL(blob); saveCF(); }
+      else { toast('Subiendo logo…'); await subirLogo(blob); toast('Logo guardado'); }
+    } catch (er) { fail(er); }
+    render(); return;
+  }
   var t = e.target.closest('[data-bind]'); if (!t) return;
   var k = t.dataset.bind, v = t.value, id = t.dataset.id;
   try {
@@ -588,6 +712,10 @@ document.addEventListener('change', async function (e) {
     else if (k === 's-n') { var sn = v.trim(); if (!sn) { toast('El nombre no puede quedar vacío'); render(); return; } await run(sb.from('servicios').update({ nombre: sn }).eq('id', id)); await loadAll(S.neg.id); }
     else if (k === 's-min') { await run(sb.from('servicios').update({ duracion_min: +v }).eq('id', id)); await loadAll(S.neg.id); }
     else if (k === 's-price') { var pr = parseInt(String(v).replace(/\D/g, ''), 10); if (isNaN(pr)) { toast('Escribí el precio en números'); render(); return; } await run(sb.from('servicios').update({ precio: pr }).eq('id', id)); await loadAll(S.neg.id); }
+    else if (k === 'ob-slug') {
+      var sl = slugify(v); if (sl.length < 3) { toast('El link debe tener al menos 3 letras o números'); render(); return; }
+      await run(sb.from('negocios').update({ slug: sl }).eq('id', S.neg.id)); await loadAll(S.neg.id);
+    }
     else if (k === 'n-nombre') { var nm = v.trim(); if (nm.length < 2) { toast('El nombre es muy corto'); render(); return; } await run(sb.from('negocios').update({ nombre: nm }).eq('id', S.neg.id)); await loadAll(S.neg.id); }
     else if (k === 'n-sena') { await run(sb.from('negocios').update({ sena_pct: +v }).eq('id', S.neg.id)); await loadAll(S.neg.id); }
     else if (k === 'suc-n') { var sx = v.trim(); if (sx.length < 2) { toast('El nombre es muy corto'); render(); return; } await run(sb.from('sucursales').update({ nombre: sx }).eq('id', id)); await loadAll(S.neg.id); }
@@ -596,11 +724,9 @@ document.addEventListener('change', async function (e) {
   render();
 });
 
-function saveCF() { var n = $('#c-n'), s = $('#c-s'); if (n) S.cf.n = n.value; if (s) S.cf.s = s.value; }
-document.addEventListener('input', function (e) {
-  if (e.target.id === 'c-n') { if (!S.cf.edited) { var s = slugify(e.target.value); $('#c-s').value = s; S.cf.s = s; } S.cf.n = e.target.value; var p = $('#c-prev'); if (p) p.textContent = location.origin + location.pathname + '?n=' + (S.cf.s || 'tu-negocio'); }
-  if (e.target.id === 'c-s') { S.cf.edited = true; S.cf.s = e.target.value; var p2 = $('#c-prev'); if (p2) p2.textContent = location.origin + location.pathname + '?n=' + (slugify(e.target.value) || 'tu-negocio'); }
-});
+function saveAF() { var n = $('#a-name'), m = $('#a-mail'), p = $('#a-pass'); if (n) S.af.name = n.value; if (m) S.af.mail = m.value; if (p) S.af.pass = p.value; }
+function saveCF() { var n = $('#c-n'); if (n) S.cf.n = n.value; }
+document.addEventListener('input', function (e) { if (e.target.id === 'c-n') S.cf.n = e.target.value; });
 document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && S.sheet) { S.sheet = null; render(); } });
 
 /* ---------- arranque ---------- */

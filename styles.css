@@ -209,3 +209,25 @@ main{display:grid;gap:16px;min-width:0;align-content:start}
 .pubwrap{max-width:640px;margin:0 auto;display:grid;gap:18px}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .loading{display:grid;place-items:center;min-height:60vh;color:var(--muted)}
+.spin{display:inline-block;width:14px;height:14px;margin-right:8px;vertical-align:-2px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:tspin .7s linear infinite}
+@keyframes tspin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation-duration:2s}}
+.btn[disabled]{opacity:.75;cursor:progress}
+.biz{object-fit:cover;border-radius:16px;background:var(--surface2)}
+.biz.ph{display:inline-flex;align-items:center;justify-content:center;width:64px;height:64px;border:1px dashed var(--line);color:var(--muted)}
+.logorow{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.filebtn{cursor:pointer;display:inline-block}
+.row.cen{justify-content:center;margin-top:18px}
+.obcard{text-align:left}
+.obprog{display:flex;gap:6px;margin-bottom:10px}
+.obprog i{flex:1;height:5px;border-radius:3px;background:var(--line)}
+.obprog i.on{background:var(--accent)}
+.oblist{list-style:none;margin:0 0 12px;padding:0;display:grid;gap:8px}
+.oblist li,.obrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.obrow input{flex:1;min-width:0}
+.obnav{margin-top:18px;justify-content:space-between}
+.tour{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.tour li{display:flex;gap:12px;align-items:flex-start}
+.tour .ico{flex:none;width:22px;height:22px;margin-top:2px;fill:none;stroke:var(--accent);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tour b{display:block}
+.card.note{margin-top:12px;background:var(--surface2)}
