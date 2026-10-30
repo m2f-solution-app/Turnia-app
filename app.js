@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 
-var CFG = { url: 'https://yuqrzicupddfceimegkk.supabase.co', key: 'sb_publishable_PX3R99YAZj6_EJJ9Q3Hctg_ykgvENSi' };
+var CFG = { url: 'https://yuqrzicupddfceimegkk.supabase.co', key: 'sb_publishable_PX3R99YAZj6_EJJ9Q3Hctg_ykgvENSi', vapid: 'BEbGwoA4ddBO-ggucdgq_JkDNU-ZhtFrEJn_lpx0Qd-d08PnlfnR7_EZn6piW-HIjB_u2lOppa2hpZxbWsmsCgE' };
 var sb = null;
 try { sb = window.supabase.createClient(CFG.url, CFG.key); } catch (e) { sb = null; }
 
@@ -43,6 +43,7 @@ var IC = {
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
   sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16v4M17 18h4"/>',
   coin: '<circle cx="12" cy="12" r="9"/><path d="M12 6.5v11M9.2 9.3c0-1 1.2-1.8 2.8-1.8s2.8.8 2.8 1.8-1.2 1.6-2.8 1.9-2.8.9-2.8 1.9 1.2 1.8 2.8 1.8 2.8-.8 2.8-1.8"/>',
+  home: '<path d="M4 11l8-7 8 7"/><path d="M6 10v10h12V10"/><path d="M10 20v-6h4v6"/>',
   comb: '<rect x="4" y="6" width="16" height="6" rx="2"/><path d="M7 12v5M10 12v5M13 12v5M16 12v5"/>'
 };
 function ico(k) { return '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">' + IC[k] + '</svg>'; }
@@ -86,7 +87,7 @@ function slugify(s) { return String(s).toLowerCase().normalize('NFD').replace(/[
 
 /* ---------- estado ---------- */
 var S = { items: {}, pagos: {}, al: { senas: [], dev: [] }, mine: null, mineCancel: false, route: 'boot', rubro: 'manicura', tiene: false, authMode: 'signup', authMsg: '', af: { name: '', mail: '', pass: '' }, authBusy: false, cf: { n: '', s: '', edited: false, err: '', logoBlob: null, logoPrev: '' },
-  seed: true, ob: { step: 0 }, fin: { range: 'semana', ref: null, loaded: false, tur: [], pag: [], gas: [] }, user: null, neg: null, suc: [], mie: [], hor: [], srv: [], sm: [], tab: 'agenda', ds: null, win: 0, tur: [], sheet: null, acct: false,
+  seed: true, ob: { step: 0 }, fin: { range: 'semana', view: 'resumen', ref: null, loaded: false, tur: [], pag: [], gas: [], top: [], can: [] }, user: null, neg: null, suc: [], mie: [], hor: [], srv: [], sm: [], tab: 'agenda', ds: null, win: 0, tur: [], sheet: null, acct: false,
   P: null, pb: null, seen: false, seenR: false };
 
 function TZ() { return (S.neg && S.neg.zona_horaria) || (S.P && S.P.negocio.zona_horaria) || DEFAULT_TZ; }
@@ -106,14 +107,14 @@ function bizLogo(sz) {
   if (S.neg && S.neg.logo_url) return '<img class="logo biz" width="' + sz + '" height="' + sz + '" src="' + esc(S.neg.logo_url) + '" alt="Logo de ' + esc(S.neg.nombre) + '">';
   return logo(sz);
 }
-function resizeImg(file, max) {
+function resizeImg(file, max, type, q) {
   return new Promise(function (res, rej) {
     var u = URL.createObjectURL(file), im = new Image();
     im.onload = function () {
       var r = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas');
       c.width = Math.max(1, Math.round(im.width * r)); c.height = Math.max(1, Math.round(im.height * r));
       c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); URL.revokeObjectURL(u);
-      c.toBlob(function (b) { b ? res(b) : rej(new Error('No se pudo procesar la imagen')); }, 'image/png');
+      c.toBlob(function (b) { b ? res(b) : rej(new Error('No se pudo procesar la imagen')); }, type || 'image/png', q);
     };
     im.onerror = function () { rej(new Error('No se pudo leer la imagen. Probá con un PNG o JPG.')); };
     im.src = u;
@@ -181,7 +182,7 @@ async function loadTur() {
   S.tur.concat(S.al.senas, S.al.dev, S.al.avisar, S.extra).forEach(function (x) { if (!seen[x.id]) { seen[x.id] = 1; ids.push(x.id); } if (x.cliente_id) cids[x.cliente_id] = 1; });
   S.cli = {};
   var cl = Object.keys(cids);
-  if (cl.length) (await run(sb.from('clientes').select('id,nombre,telefono').in('id', cl))).forEach(function (c) { S.cli[c.id] = c; });
+  if (cl.length) (await run(sb.from('clientes').select('id,nombre,telefono,alertas').in('id', cl))).forEach(function (c) { S.cli[c.id] = c; });
   if (ids.length) {
     var r = await Promise.all([run(sb.from('turno_servicios').select('*').in('turno_id', ids).order('orden')), run(sb.from('pagos').select('*').in('turno_id', ids).order('creado_en'))]);
     r[0].forEach(function (x) { (S.items[x.turno_id] = S.items[x.turno_id] || []).push(x); });
@@ -189,7 +190,7 @@ async function loadTur() {
   }
 }
 var MEDIOS = { efectivo: 'Efectivo', mercadopago: 'QR Mercado Pago', transferencia: 'Transferencia' };
-function findTurno(id) { return S.tur.concat(S.al.senas, S.al.dev, S.al.avisar || [], S.extra || []).filter(function (x) { return x.id === id; })[0]; }
+function findTurno(id) { return S.tur.concat(S.al.senas, S.al.dev, S.al.avisar || [], S.extra || [], (S.home && S.home.manana) || []).filter(function (x) { return x.id === id; })[0]; }
 function turnoNombres(t) { var it = S.items[t.id]; if (it && it.length) return it.map(function (x) { return x.nombre; }).join(' + '); var sv = svcOf(t.servicio_id); return sv ? sv.nombre : 'Servicio'; }
 function pagado(t) { return (S.pagos[t.id] || []).filter(function (p) { return p.estado === 'aprobado'; }).reduce(function (a, p) { return a + (+p.monto); }, 0); }
 function durTxt(m) { return m >= 60 ? Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '') : m + ' min'; }
@@ -223,14 +224,64 @@ function memberName(id) { var m = S.mie.filter(function (x) { return x.id === id
 function svcOf(id) { return S.srv.filter(function (x) { return x.id === id; })[0]; }
 function whoDoes(sid) { return S.sm.filter(function (x) { return x.servicio_id === sid; }).map(function (x) { return x.miembro_id; }); }
 
+/* ---------- notificaciones push ---------- */
+var PUSH_OK = ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window);
+function isIOS() { return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+function isStandalone() { try { return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch (e) { return false; } }
+function b64u(str) { var pad = '='.repeat((4 - str.length % 4) % 4), b = (str + pad).replace(/-/g, '+').replace(/_/g, '/'), r = atob(b), o = new Uint8Array(r.length); for (var i = 0; i < r.length; i++) o[i] = r.charCodeAt(i); return o; }
+function pushLater() { try { return localStorage.getItem('turnia-push-later') === '1'; } catch (e) { return false; } }
+async function pushRefresh() {
+  S.push = { sup: PUSH_OK, perm: PUSH_OK ? Notification.permission : 'denied', on: false, ios: isIOS() && !isStandalone() && !PUSH_OK };
+  if (PUSH_OK) { try { var reg = await navigator.serviceWorker.getRegistration(); var sub = reg && await reg.pushManager.getSubscription(); S.push.on = !!sub && Notification.permission === 'granted'; } catch (e) { } }
+}
+async function pushOn() {
+  var perm = await Notification.requestPermission();
+  if (perm !== 'granted') { await pushRefresh(); toast(perm === 'denied' ? 'Las notificaciones quedaron bloqueadas en este navegador' : 'No activaste las notificaciones'); return; }
+  var reg = await navigator.serviceWorker.ready;
+  var sub = await reg.pushManager.getSubscription() || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64u(CFG.vapid) });
+  var j = sub.toJSON();
+  await run(sb.from('push_subs').upsert({ negocio_id: S.neg.id, user_id: S.user.id, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, ua: navigator.userAgent.slice(0, 200) }, { onConflict: 'endpoint' }));
+  await pushRefresh(); toast('Notificaciones activadas en este dispositivo');
+}
+async function pushOff() {
+  var reg = await navigator.serviceWorker.getRegistration(), sub = reg && await reg.pushManager.getSubscription();
+  if (sub) { var ep = sub.endpoint; await sub.unsubscribe(); await run(sb.from('push_subs').delete().eq('endpoint', ep)); }
+  await pushRefresh(); toast('Notificaciones desactivadas en este dispositivo');
+}
+async function pushTest() {
+  var r = await sb.functions.invoke('push-notify', { body: { tipo: 'test' } });
+  if (r.error) throw r.error;
+  toast(r.data && r.data.enviados ? 'Te mandamos una prueba' : 'No se pudo enviar. Probá desactivar y volver a activar.');
+}
+function pushCard() {
+  var p = S.push || {}, body;
+  if (p.ios) body = '<p class="muted small">En iPhone, las notificaciones funcionan con la app instalada: abrí esta página en Safari, tocá <b>Compartir</b> y elegí <b>Agregar a inicio</b>. Después abrila desde el ícono y activalas acá.</p>';
+  else if (!p.sup) body = '<p class="muted small">Este navegador no permite notificaciones. Probá con Chrome o con la app instalada.</p>';
+  else if (p.perm === 'denied') body = '<p class="muted small">Las notificaciones están bloqueadas para este sitio. Habilitalas desde el candado junto a la dirección del navegador y volvé acá.</p>';
+  else if (p.on) body = '<p class="muted small">Este dispositivo recibe un aviso cuando alguien reserva, cancela o avisa que transfirió la seña. Al tocarlo se abre el turno.</p><div class="row"><button class="btn" data-act="push-test">Enviar prueba</button><button class="btn" data-act="push-off">Desactivar</button></div>';
+  else body = '<p class="muted small">Recibí un aviso cuando alguien reserve, cancele o avise que transfirió la seña. Al tocarlo se abre el turno. Se activa en cada dispositivo que uses.</p><div class="row"><button class="btn primary" data-act="push-on">Activar en este dispositivo</button></div>';
+  return '<div class="card staff"><h3>Notificaciones</h3>' + body + '</div>';
+}
+async function openTurno(id) {
+  if (!S.neg || S.route !== 'app') { S.openId = id; return; }
+  try {
+    var tt = await run(sb.from('turnos').select('inicio').eq('id', id).limit(1));
+    if (tt[0]) { var tz = TZ(), ds = utcToLocal(tt[0].inicio, tz).ds; S.ds = ds; S.win = Math.floor((Math.round((Date.parse(ds) - Date.parse(todayDs(tz))) / 86400000) + 1) / 7); }
+  } catch (e) { }
+  S.tab = 'agenda'; S.acct = false; S.sheet = { type: 'detail', id: id }; await loadTur(); render();
+}
 async function enter() {
   try {
     var m = await run(sb.from('miembros').select('negocio_id,rol').eq('user_id', S.user.id).eq('activo', true).limit(1));
     if (!m.length) { S.route = 'crear'; render(); return; }
     await loadAll(m[0].negocio_id);
-    S.ds = todayDs(TZ()); S.win = 0; S.tab = 'agenda';
+    S.ds = todayDs(TZ()); S.win = 0; S.tab = 'inicio';
     if (!S.neg.onboarding_listo) { S.ob = { step: 0 }; S.route = 'onb'; render(); return; }
-    S.route = 'app'; await loadTur(); render();
+    await pushRefresh();
+    S.route = 'app';
+    var ab = null; try { ab = new URLSearchParams(location.search).get('abrir') || S.openId; } catch (e) { }
+    S.openId = null;
+    if (ab) { try { history.replaceState(null, '', location.pathname); } catch (e) { } await openTurno(ab); } else { await loadHome(); }
   } catch (e) { fail(e); S.route = 'welcome'; render(); }
 }
 
@@ -357,15 +408,15 @@ function obView() {
 }
 
 /* ---------- vistas: panel ---------- */
-var TABS = [['agenda', 'Agenda', 'calendar'], ['equipo', 'Equipo', 'users'], ['servicios', 'Servicios', 'scissors'], ['finanzas', 'Finanzas', 'coin'], ['ajustes', 'Ajustes', 'gear']];
+var TABS = [['inicio', 'Inicio', 'home'], ['agenda', 'Agenda', 'calendar'], ['equipo', 'Equipo', 'users'], ['servicios', 'Servicios', 'scissors'], ['finanzas', 'Finanzas', 'coin'], ['ajustes', 'Ajustes', 'gear']];
 function shell() {
   var nav = TABS.map(function (t) { return '<button data-act="tab" data-v="' + t[0] + '"' + (S.tab === t[0] ? ' aria-current="page"' : '') + '>' + ico(t[2]) + '<span>' + t[1] + '</span></button>'; }).join('');
   var acct = S.acct ? '<div class="card acct"><div><b>' + esc(S.neg.nombre) + '</b><div class="small muted">' + esc(S.user && S.user.email || '') + '</div></div>' +
     '<div class="group"><span class="lbl">Apariencia</span>' + themeChips() + '</div><button class="btn" data-act="logout">Cerrar sesión</button></div>' : '';
-  var body = { agenda: agendaView, equipo: equipoView, servicios: serviciosView, finanzas: finanzasView, ajustes: ajustesView, clientas: clientasView }[S.tab]();
+  var body = { inicio: inicioView, agenda: agendaView, equipo: equipoView, servicios: serviciosView, finanzas: finanzasView, ajustes: ajustesView, clientas: function () { return S.fx ? fichaView() : clientasView(); } }[S.tab]();
   return '<div class="top"><div class="l">' + bizLogo(36) + '<div><div class="nm">Turnia</div><div class="sub">' + esc(S.neg.nombre) + '</div></div></div>' +
     '<div class="r"><button class="chip" data-act="acct" aria-expanded="' + S.acct + '" style="display:flex;align-items:center;gap:6px">' + ico('gear') + 'Cuenta</button></div>' + acct + '</div>' +
-    '<div class="shell"><nav class="nav" aria-label="Secciones">' + nav + '</nav><main>' + body + '</main></div>' + (S.sheet ? sheetView() : '');
+    '<div class="shell"><nav class="nav" aria-label="Secciones">' + nav + '</nav><main>' + body + '</main></div>' + (S.sheet ? sheetView() : '') + (S.ph ? '<div class="lightbox" data-act="ph-close" role="dialog" aria-label="Foto"><img src="' + esc(S.ph) + '" alt="Foto del trabajo"><button class="btn" data-act="ph-close">Cerrar</button></div>' : '');
 }
 
 function waPhone(raw) {
@@ -394,8 +445,17 @@ function waBlock(a) {
   return '<div class="card note"><b>Avisar por WhatsApp</b><div class="row"><button class="btn' + (a.aviso_conf_en ? '' : ' primary') + '" data-act="wa" data-v="conf">' + (a.aviso_conf_en ? 'Reenviar confirmación' : 'Enviar confirmación') + '</button><button class="btn" data-act="wa" data-v="rec">' + (a.aviso_rec_en ? 'Reenviar recordatorio' : 'Enviar recordatorio') + '</button></div>' +
     '<p class="muted small">' + (a.aviso_conf_en ? '✓ Confirmación enviada ' + fmt(a.aviso_conf_en) + '. ' : 'Confirmación sin enviar. ') + (a.aviso_rec_en ? '✓ Recordatorio enviado ' + fmt(a.aviso_rec_en) + '.' : '') + ' Se abre WhatsApp con el mensaje escrito; vos solo lo enviás.</p></div>';
 }
+function pushBanner() {
+  var h = '', pp = S.push;
+  if (!pp && !S.pushLoading) { S.pushLoading = true; pushRefresh().then(function () { S.pushLoading = false; render(); }); }
+  if (pp && !pushLater()) {
+    if (pp.ios) h += '<div class="card note"><b>Activá las notificaciones</b><p class="muted small">En iPhone, instalá la app: en Safari tocá Compartir y después Agregar a inicio. Abrila desde el ícono y activalas en Ajustes.</p><div class="row"><button class="btn" data-act="push-later">Ahora no</button></div></div>';
+    else if (pp.sup && pp.perm === 'default' && !pp.on) h += '<div class="card note"><b>Enterate al instante</b><p class="muted small">Activá las notificaciones y te avisamos cuando alguien reserve, cancele o avise que transfirió la seña.</p><div class="row"><button class="btn primary" data-act="push-on">Activar</button><button class="btn" data-act="push-later">Ahora no</button></div></div>';
+  }
+  return h;
+}
 function alertsHtml() {
-  var tz = TZ(), h = '';
+  var tz = TZ(), h = pushBanner();
   if (S.al.senas.length) h += '<div class="card staff alertc"><h3>Señas por confirmar (' + S.al.senas.length + ')</h3>' + S.al.senas.map(function (t) {
     var l = utcToLocal(t.inicio, tz), v = utcToLocal(t.vence_en, tz);
     return '<div class="alrow"><span><b>' + esc(t.cliente_nombre) + '</b> · ' + dlabel(l.ds) + ' ' + hhm(l.min) + ' · seña ' + money(t.senia_requerida) + '<br><small>Vence a las ' + hhm(v.min) + (t.aviso_pago ? ' · <b>avisó que transfirió</b>' : '') + '</small></span><button class="btn primary" data-act="appt" data-v="' + t.id + '">Ver</button></div>';
@@ -476,6 +536,83 @@ async function loadClientas() {
   S.cl = r[0].map(function (c) { var a = agg[c.id] || { n: 0, last: null }; return { c: c, n: a.n, last: a.last }; }).sort(function (x, y) { return y.n - x.n; });
   render();
 }
+/* ---------- ficha de la clienta ---------- */
+var CAMPOS = {
+  manicura: ['Técnica o tratamiento', 'Color, producto o marca', 'Forma, largo o zona', 'Próximo retoque'],
+  peluqueria: ['Servicio realizado', 'Fórmula (marca y tono)', 'Oxidante y tiempo', 'Productos recomendados'],
+  barberia: ['Corte (máquina, largo)', 'Degradé o perfilado', 'Barba', 'Productos recomendados']
+};
+function dfull(ds) { return dlabel(ds) + ' ' + MESES[+ds.split('-')[1] - 1].slice(0, 3).toLowerCase(); }
+async function loadFicha(id, abrirForm) {
+  var r = await Promise.all([
+    run(sb.from('clientes').select('*').eq('id', id).single()),
+    run(sb.from('turnos').select('id,inicio,duracion_min,precio,estado,miembro_id,estado_pago,descuento_pct,servicio_id').eq('cliente_id', id).order('inicio', { ascending: false }).limit(200)),
+    run(sb.from('cliente_registros').select('*').eq('cliente_id', id).order('creado_en', { ascending: false }).limit(200))]);
+  var tur = r[1].filter(function (t) { return t.estado === 'reservado' || t.estado === 'completado' || t.estado === 'ausente'; }), ids = tur.map(function (t) { return t.id; }), items = {};
+  if (ids.length) (await chunkedIn('turno_servicios', 'turno_id', ids)).forEach(function (x) { (items[x.turno_id] = items[x.turno_id] || []).push(x); });
+  var paths = []; r[2].forEach(function (g) { (g.fotos || []).forEach(function (f) { paths.push(f); }); });
+  var urls = {};
+  if (paths.length) { try { var sg = await sb.storage.from('fichas').createSignedUrls(paths, 3600); (sg.data || []).forEach(function (x) { if (x.signedUrl) urls[x.path] = x.signedUrl; }); } catch (e) { } }
+  var keep = S.fx && S.fx.id === id ? S.fx.form : null;
+  S.fx = { id: id, c: r[0], tur: tur, items: items, reg: r[2], urls: urls, form: keep, delRg: null, busy: false };
+  if (abrirForm) fichaOpenForm(abrirForm === true ? null : abrirForm);
+  render();
+}
+function fichaOpenForm(turnoId) {
+  var fx = S.fx, now = Date.now(), def = turnoId;
+  if (!def) { var past = fx.tur.filter(function (t) { return new Date(t.inicio).getTime() <= now + 3600000 && t.estado !== 'ausente'; })[0]; def = past ? past.id : ''; }
+  fx.form = { turno_id: def, texto: '', campos: {}, files: [], err: '' };
+}
+function fxSnap() {
+  var f = S.fx && S.fx.form; if (!f) return;
+  var t = document.getElementById('rg-t'), tu = document.getElementById('rg-turno'); if (t) f.texto = t.value; if (tu) f.turno_id = tu.value;
+  Array.prototype.forEach.call(document.querySelectorAll('[data-campo]'), function (i) { f.campos[i.dataset.campo] = i.value; });
+}
+function thumbs(g, fx) {
+  return (g.fotos || []).length ? '<div class="thumbs">' + g.fotos.map(function (p) { return fx.urls[p] ? '<button class="thumb" data-act="ph-open" data-v="' + esc(fx.urls[p]) + '" aria-label="Ver foto"><img loading="lazy" src="' + esc(fx.urls[p]) + '" alt=""></button>' : '<span class="thumb ph"></span>'; }).join('') + '</div>' : '';
+}
+function regHtml(g, fx) {
+  var camp = Object.keys(g.campos || {}).filter(function (k) { return String(g.campos[k] || '').trim(); }).map(function (k) { return '<div><span>' + esc(k) + '</span><b>' + esc(g.campos[k]) + '</b></div>'; }).join('');
+  var l = utcToLocal(g.creado_en, TZ());
+  return '<div class="reg"><div class="reg-h"><small class="muted">Anotado el ' + dfull(l.ds) + ' ' + hhm(l.min) + '</small>' +
+    (fx.delRg === g.id ? '<span class="btns"><button class="btn danger" data-act="rg-del-yes" data-id="' + g.id + '">Eliminar</button><button class="btn" data-act="rg-del-no">No</button></span>' : '<button class="chip" data-act="rg-del" data-id="' + g.id + '" aria-label="Eliminar registro">×</button>') + '</div>' +
+    (camp ? '<div class="kv">' + camp + '</div>' : '') + (g.texto ? '<p class="rtext">' + esc(g.texto).replace(/\n/g, '<br>') + '</p>' : '') + thumbs(g, fx) + '</div>';
+}
+function fichaView() {
+  var fx = S.fx, c = fx.c;
+  if (!c) return '<div class="head"><button class="btn" data-act="cl-back">‹ Clientas</button></div><div class="loading">Cargando…</div>';
+  var tz = TZ(), now = Date.now(), rub = S.neg.rubro, ph = waPhone(c.telefono);
+  var past = fx.tur.filter(function (t) { return new Date(t.inicio).getTime() <= now && t.estado !== 'ausente'; }), next = fx.tur.filter(function (t) { return new Date(t.inicio).getTime() > now; });
+  var since = fx.tur.length ? utcToLocal(fx.tur[fx.tur.length - 1].inicio, tz).ds : null;
+  var head = '<div class="head"><button class="btn" data-act="cl-back">‹ Clientas</button></div>' +
+    '<div class="card staff"><h2 style="margin:0 0 4px">' + esc(c.nombre) + '</h2><p class="muted small" style="margin:0 0 10px">' + esc(c.telefono || 'Sin teléfono') + (c.dni ? ' · DNI ' + esc(c.dni) : '') + '</p>' +
+    '<div class="kpis kpis3"><div class="kpi"><small>Vino</small><b>' + past.length + (past.length === 1 ? ' vez' : ' veces') + '</b></div><div class="kpi"><small>Cliente desde</small><b class="sm">' + (since ? dfull(since) : '—') + '</b></div><div class="kpi"><small>Próximos</small><b>' + next.length + '</b></div></div>' +
+    '<div class="row">' + (ph ? '<a class="btn" href="https://wa.me/' + ph + '" target="_blank" rel="noopener">WhatsApp</a>' : '') + '</div></div>' +
+    '<div class="card staff"><label>Alergias y cuidados<textarea data-bind="c-alert" data-id="' + c.id + '" rows="2" maxlength="600" placeholder="Ej: alérgica al látex, piel sensible, cuero cabelludo irritado">' + esc(c.alertas || '') + '</textarea></label><p class="hint">Se muestra al abrir cualquiera de sus turnos, para que nadie se lo pase por alto.</p></div>';
+  var f = fx.form, form = '';
+  if (f) {
+    var opts = '<option value="">Sin turno asociado</option>' + fx.tur.filter(function (t) { return t.estado !== 'ausente'; }).slice(0, 12).map(function (t) { var l = utcToLocal(t.inicio, tz), its = fx.items[t.id] || []; return '<option value="' + t.id + '"' + (t.id === f.turno_id ? ' selected' : '') + '>' + dfull(l.ds) + ' ' + hhm(l.min) + (its.length ? ' · ' + esc(its.map(function (x) { return x.nombre; }).join(' + ')) : '') + '</option>'; }).join('');
+    form = '<div class="card staff"><h3>Registrar trabajo</h3><label>Turno<select id="rg-turno">' + opts + '</select></label>' +
+      '<div class="two">' + (CAMPOS[rub] || CAMPOS.manicura).map(function (k) { return '<label>' + esc(k) + '<input data-campo="' + esc(k) + '" value="' + esc(f.campos[k] || '') + '" autocomplete="off"></label>'; }).join('') + '</div>' +
+      '<label>Observaciones<textarea id="rg-t" rows="3" maxlength="2000" placeholder="Qué se hizo, cómo respondió, qué hay que repetir o evitar la próxima vez">' + esc(f.texto) + '</textarea></label>' +
+      '<div class="group"><span class="lbl">Fotos (hasta 8)</span><div class="thumbs">' + f.files.map(function (x, i) { return '<span class="thumb"><img src="' + x.prev + '" alt=""><button class="x" data-act="rg-rmf" data-v="' + i + '" aria-label="Quitar foto">×</button></span>'; }).join('') +
+      (f.files.length < 8 ? '<label class="thumb add" aria-label="Agregar fotos"><input id="rg-files" type="file" accept="image/*" multiple hidden><span>+</span></label>' : '') + '</div><p class="hint">Se guardan privadas: solo las ve tu equipo. Pedile permiso a la clienta antes de sacar la foto.</p></div>' +
+      '<p class="err" id="rg-err" role="alert">' + esc(f.err || '') + '</p><div class="row"><button class="btn primary" data-act="rg-save"' + (fx.busy ? ' disabled aria-busy="true"' : '') + '>' + (fx.busy ? '<span class="spin"></span>Guardando…' : 'Guardar registro') + '</button><button class="btn" data-act="rg-cancel">Cancelar</button></div></div>';
+  } else form = '<div class="row"><button class="btn primary" data-act="rg-new">+ Registrar trabajo</button></div>';
+  // historial: turnos con sus registros + registros sueltos
+  var byT = {}, loose = [];
+  fx.reg.forEach(function (g) { if (g.turno_id && fx.tur.some(function (t) { return t.id === g.turno_id; })) (byT[g.turno_id] = byT[g.turno_id] || []).push(g); else loose.push(g); });
+  var ev = fx.tur.map(function (t) { return { k: 'turno', d: t.inicio, t: t }; }).concat(loose.map(function (g) { return { k: 'nota', d: g.creado_en, g: g }; })).sort(function (a, b) { return a.d < b.d ? 1 : -1; });
+  var hist = ev.length ? ev.map(function (e) {
+    if (e.k === 'nota') return '<div class="visit nota"><div class="vh"><b>Nota suelta</b></div>' + regHtml(e.g, fx) + '</div>';
+    var t = e.t, l = utcToLocal(t.inicio, tz), its = fx.items[t.id] || [], fut = new Date(t.inicio).getTime() > now;
+    return '<div class="visit"><div class="vh"><b>' + dfull(l.ds) + ' · ' + hhm(l.min) + '</b><span class="tag' + (fut ? ' fut' : '') + '">' + (fut ? 'Próximo' : t.estado === 'completado' ? 'Atendida' : 'Turno') + '</span></div>' +
+      '<p class="vs">' + esc(its.length ? its.map(function (x) { return x.nombre; }).join(' + ') : 'Servicio') + ' · con ' + esc(memberName(t.miembro_id)) + ' · ' + money(t.precio) + (+t.descuento_pct > 0 ? ' <small class="muted">(' + t.descuento_pct + '% fidelidad)</small>' : '') + '</p>' +
+      (byT[t.id] || []).map(function (g) { return regHtml(g, fx); }).join('') +
+      (!fut && !(byT[t.id] || []).length ? '<button class="chip" data-act="rg-new" data-v="' + t.id + '">+ Anotar este turno</button>' : '') + '</div>';
+  }).join('') : '<p class="muted">Todavía no tiene turnos. Cuando venga, su historial aparece acá.</p>';
+  return head + form + '<div class="card staff"><h3>Historial</h3>' + hist + '</div>';
+}
 function clientasView() {
   var tz = TZ(), q = (S.cq || '').toLowerCase().replace(/\s+/g, ' ').trim(), n = S.neg, list = (S.cl || []).filter(function (x) { return !q || (x.c.nombre || '').toLowerCase().indexOf(q) > -1 || String(x.c.telefono || '').replace(/\D/g, '').indexOf(q.replace(/\D/g, '') || '§') > -1; });
   var rows = list.map(function (x) {
@@ -483,13 +620,72 @@ function clientasView() {
     return '<div class="card staff cli"><div class="top2"><b>' + esc(c.nombre) + '</b><span class="tag">' + x.n + (x.n === 1 ? ' turno' : ' turnos') + '</span></div>' +
       '<p class="muted small">' + esc(c.telefono || 'Sin teléfono') + (l ? ' · último: ' + dlabel(l.ds) : '') + '</p>' +
       (n.fid_activa ? '<div class="fmini" aria-label="Sellos ' + pos + ' de ' + n.fid_cada + '">' + Array.apply(null, Array(n.fid_cada)).map(function (_, i) { return '<i class="' + (i < pos ? 'on' : '') + '"></i>'; }).join('') + '<small>' + (x.n && x.n % n.fid_cada === 0 ? 'Tarjeta completa' : pos + ' de ' + n.fid_cada) + '</small></div>' : '') +
-      '<div class="two"><label>DNI (opcional, uso interno)<input inputmode="numeric" data-bind="c-dni" data-id="' + c.id + '" value="' + esc(c.dni || '') + '" placeholder="Sin cargar"></label>' + (ph ? '<div class="row" style="align-self:end"><a class="btn" href="https://wa.me/' + ph + '" target="_blank" rel="noopener">WhatsApp</a></div>' : '') + '</div></div>';
+      (c.alertas ? '<p class="alertline"><b>Cuidado:</b> ' + esc(c.alertas) + '</p>' : '') + '<div class="two"><label>DNI (opcional, uso interno)<input inputmode="numeric" data-bind="c-dni" data-id="' + c.id + '" value="' + esc(c.dni || '') + '" placeholder="Sin cargar"></label><div class="row" style="align-self:end"><button class="btn primary" data-act="cl-open" data-id="' + c.id + '">Ver ficha</button>' + (ph ? '<a class="btn" href="https://wa.me/' + ph + '" target="_blank" rel="noopener">WhatsApp</a>' : '') + '</div></div></div>';
   }).join('');
   return '<div class="head"><h2>Mis clientas</h2><button class="btn" data-act="tab" data-v="ajustes">‹ Ajustes</button></div>' +
     '<label>Buscar<input id="cq" value="' + esc(S.cq || '') + '" placeholder="Nombre o teléfono" autocomplete="off"></label>' +
     (S.cl ? (rows || '<p class="muted">' + (S.cl.length ? 'No hay resultados.' : 'Todavía no hay clientas. Aparecen cuando reservan por el link o cuando cargás su teléfono en un turno.') + '</p>') : '<div class="loading">Cargando…</div>');
 }
 document.addEventListener('input', function (e) { if (e.target.id === 'cq') { S.cq = e.target.value; var pos = e.target.selectionStart; render(); var c = document.getElementById('cq'); if (c) { c.focus(); try { c.setSelectionRange(pos, pos); } catch (x) { } } } });
+/* ---------- inicio ---------- */
+async function loadHome() {
+  var tz = TZ(), today = todayDs(tz);
+  S.ds = today; S.win = 0;
+  await loadTur();
+  var a = zonedToUtc(addDays(today, 1), 0, tz).toISOString(), b = zonedToUtc(addDays(today, 2), 0, tz).toISOString(), since = new Date(Date.now() - 86400000).toISOString();
+  var r = await Promise.all([
+    run(sb.from('turnos').select('*').eq('negocio_id', S.neg.id).gte('inicio', a).lt('inicio', b).neq('estado', 'cancelado').order('inicio')),
+    run(sb.from('turnos').select('id').eq('negocio_id', S.neg.id).eq('origen', 'link').gte('creado_en', since))]);
+  var man = r[0].filter(isFirm), ids = man.map(function (x) { return x.id; }), need = {};
+  man.forEach(function (x) { if (x.cliente_id && !S.cli[x.cliente_id]) need[x.cliente_id] = 1; });
+  if (ids.length) (await run(sb.from('turno_servicios').select('*').in('turno_id', ids).order('orden'))).forEach(function (x) { (S.items[x.turno_id] = S.items[x.turno_id] || []).push(x); });
+  var nk = Object.keys(need);
+  if (nk.length) (await run(sb.from('clientes').select('id,nombre,telefono,alertas').in('id', nk))).forEach(function (c) { S.cli[c.id] = c; });
+  S.home = { manana: man, linkN: r[1].length, loaded: true };
+  render();
+}
+function homeRow(t, right, sub) {
+  var tz = TZ(), l = utcToLocal(t.inicio, tz), cls = t.estado_pago === 'sena' ? 'seña' : t.estado_pago;
+  return '<div class="alrow"><span><b><i class="dot ' + cls + '"></i>' + hhm(l.min) + ' · ' + esc(t.cliente_nombre) + '</b><br><small>' + (sub || esc(turnoNombres(t)) + ' · ' + esc(memberName(t.miembro_id))) + '</small></span>' + (right || '') + '</div>';
+}
+function inicioView() {
+  var h = S.home;
+  if (!h || !h.loaded) return '<div class="head"><h2>Inicio</h2></div><div class="loading">Cargando…</div>';
+  var tz = TZ(), today = todayDs(tz), now = Date.now(), dow = dowOf(today);
+  var firm = S.tur.filter(isFirm), fact = 0, cob = 0, booked = 0;
+  firm.forEach(function (t) { fact += +t.precio; cob += Math.min(+t.precio, pagado(t)); booked += +t.duracion_min; });
+  var cap = 0; S.hor.forEach(function (x) { if (x.dia_semana === dow && S.mie.some(function (m) { return m.id === x.miembro_id; })) cap += tmin(x.hasta) - tmin(x.desde); });
+  var occ = cap ? Math.min(100, Math.round(booked / cap * 100)) : 0;
+  var kp = '<div class="kpis"><div class="kpi"><small>Turnos de hoy</small><b>' + firm.length + '</b></div><div class="kpi"><small>Facturado hoy</small><b>' + money(fact) + '</b></div><div class="kpi"><small>Ya cobrado</small><b class="good">' + money(cob) + '</b></div><div class="kpi"><small>Por cobrar</small><b>' + money(Math.max(0, fact - cob)) + '</b></div></div>';
+  var occH = '<div class="card"><div class="top2"><b>Ocupación de hoy</b><span class="muted small">' + (cap ? occ + '% · ' + durTxt(booked) + ' de ' + durTxt(cap) : 'Sin horarios hoy') + '</span></div><div class="occ" role="img" aria-label="Ocupación ' + occ + '%"><i style="width:' + occ + '%"></i></div>' +
+    '<p class="muted small" style="margin:8px 0 0">' + (h.linkN ? h.linkN + (h.linkN === 1 ? ' reserva nueva' : ' reservas nuevas') + ' por el link en las últimas 24 h.' : 'Sin reservas nuevas por el link en las últimas 24 h.') + '</p></div>';
+  var next = firm.filter(function (t) { return new Date(t.fin || t.inicio).getTime() > now; })[0];
+  var nextH = '<div class="card staff"><h3>' + (next && new Date(next.inicio).getTime() <= now ? 'En curso ahora' : 'Próximo turno') + '</h3>' + (next ? homeRow(next, '<button class="btn primary" data-act="appt" data-v="' + next.id + '">Abrir</button>') : '<p class="muted">No quedan turnos para hoy.</p>') + '</div>';
+  // para recordar: turnos de hoy (que no pasaron) y de mañana sin recordatorio
+  var rem = firm.filter(function (t) { return new Date(t.inicio).getTime() > now; }).map(function (t) { return [t, 'Hoy']; }).concat(h.manana.map(function (t) { return [t, 'Mañana']; })).filter(function (x) { return x[0].estado === 'reservado' && !x[0].aviso_rec_en; });
+  var conf = (S.al.avisar || []).filter(function (t) { return t.__aviso === 'conf'; }).slice(0, 4);
+  var remRows = rem.map(function (x) {
+    var t = x[0], c = S.cli[t.cliente_id], ph = c && waPhone(c.telefono), l = utcToLocal(t.inicio, tz);
+    return '<div class="alrow"><span><b>' + x[1] + ' ' + hhm(l.min) + ' · ' + esc(t.cliente_nombre) + '</b><br><small>' + esc(turnoNombres(t)) + (ph ? '' : ' · sin teléfono') + '</small></span>' + (ph ? '<button class="btn primary" data-act="wa" data-v="rec" data-id="' + t.id + '">Recordar</button>' : '<button class="btn" data-act="appt" data-v="' + t.id + '">Ver</button>') + '</div>';
+  }).join('');
+  var confRows = conf.map(function (t) {
+    var l = utcToLocal(t.inicio, tz); return '<div class="alrow"><span><b>' + dlabel(l.ds) + ' ' + hhm(l.min) + ' · ' + esc(t.cliente_nombre) + '</b><br><small>Falta enviar la confirmación</small></span><button class="btn" data-act="wa" data-v="conf" data-id="' + t.id + '">Confirmar</button></div>';
+  }).join('');
+  var remH = '<div class="card staff alertc"><h3>Para recordar' + (rem.length ? ' (' + rem.length + ')' : '') + '</h3>' + (remRows || '<p class="muted">Todas las clientas de hoy y mañana ya fueron recordadas.</p>') + (confRows ? '<h4>Sin confirmación enviada</h4>' + confRows : '') + '</div>';
+  // pendientes
+  var sinCobrar = firm.filter(function (t) { return new Date(t.fin || t.inicio).getTime() < now && t.estado_pago !== 'pagado'; });
+  var pend = '';
+  S.al.senas.slice(0, 4).forEach(function (t) { var l = utcToLocal(t.inicio, tz); pend += '<div class="alrow"><span><b>' + esc(t.cliente_nombre) + '</b> · seña ' + money(t.senia_requerida) + '<br><small>' + dlabel(l.ds) + ' ' + hhm(l.min) + (t.aviso_pago ? ' · <b>avisó que transfirió</b>' : ' · esperando transferencia') + '</small></span><button class="btn primary" data-act="appt" data-v="' + t.id + '">Confirmar</button></div>'; });
+  S.al.dev.slice(0, 3).forEach(function (t) { var l = utcToLocal(t.inicio, tz); pend += '<div class="alrow"><span><b>' + esc(t.cliente_nombre) + '</b> canceló a tiempo<br><small>Devolver ' + money(pagado(t) || +t.senia_requerida) + ' · era ' + dlabel(l.ds) + ' ' + hhm(l.min) + '</small></span><span class="btns"><button class="btn" data-act="wa-dev" data-id="' + t.id + '">Avisar</button><button class="btn" data-act="dev-ok" data-id="' + t.id + '">Ya devolví</button></span></div>'; });
+  sinCobrar.slice(0, 5).forEach(function (t) { pend += homeRow(t, '<button class="btn" data-act="appt" data-v="' + t.id + '">Cobrar</button>', 'Falta cobrar ' + money(Math.max(0, Math.round(+t.precio - pagado(t))))); });
+  var pendH = '<div class="card staff alertc"><h3>Para resolver</h3>' + (pend || '<p class="muted">Nada pendiente. ¡Todo al día!</p>') + '</div>';
+  // agenda de hoy
+  var ag = firm.length ? firm.map(function (t) { return homeRow(t, '<button class="btn" data-act="appt" data-v="' + t.id + '">Ver</button>'); }).join('') : '<p class="muted">Hoy no tenés turnos cargados.</p>';
+  var mn = h.manana, mnTxt = mn.length ? 'Mañana: <b>' + mn.length + (mn.length === 1 ? ' turno' : ' turnos') + '</b>, el primero a las ' + hhm(utcToLocal(mn[0].inicio, tz).min) + '.' : 'Mañana todavía no tenés turnos.';
+  var agH = '<div class="card staff"><div class="top2"><h3>Agenda de hoy</h3><span class="muted small">' + dlong(today) + '</span></div>' + ag + '<p class="muted small" style="margin:8px 0">' + mnTxt + '</p><div class="row"><button class="btn primary" data-act="new">+ Nuevo turno</button><button class="btn" data-act="tab" data-v="agenda">Ver agenda completa</button><button class="btn" data-act="tab" data-v="clientas">Mis clientas</button></div></div>';
+  return '<div class="head"><h2>Hola, ' + esc(S.neg.nombre) + '</h2></div><p class="muted small" style="margin-top:-6px">' + dlong(today) + ' de ' + MESES[+today.split('-')[1] - 1].toLowerCase() + '</p>' +
+    pushBanner() + kp + occH + nextH + remH + pendH + agH;
+}
 function equipoView() {
   var order = [1, 2, 3, 4, 5, 6, 0], ab = ['D', 'L', 'M', 'M', 'J', 'V', 'S'], RL = { dueno: 'Dueño o dueña', encargado: 'Encargado', profesional: 'Profesional' };
   var hrs = function (sel, key, id) { var o = ''; for (var h = 6; h <= 23; h++) o += '<option value="' + (h * 60) + '"' + (h * 60 === sel ? ' selected' : '') + '>' + h + ':00</option>'; return '<select data-bind="' + key + '" data-id="' + id + '">' + o + '</select>'; };
@@ -546,7 +742,7 @@ function ajustesView() {
     '<div class="row"><a class="btn" href="' + esc(pubUrl(n.tiene_sucursales && S.suc[0] ? S.suc[0].slug : '')) + '" target="_blank" rel="noopener">Ver como cliente</a></div></div>' +
     '<div class="card staff"><h3>Guía de configuración</h3><p class="muted small">Repasá logo, servicios, horarios, equipo, cobros y link paso a paso.</p><div class="row"><button class="btn" data-act="ob-guia">Abrir la guía</button></div></div>' +
     '<div class="card staff"><h3>Negocio</h3><label>Nombre<input data-bind="n-nombre" value="' + esc(n.nombre) + '"></label>' +
-    '</div><div class="card staff"><h3>Seña y cancelaciones</h3>' + senaFields(n) + '</div>' + fidConfig(n) + sucs;
+    '</div><div class="card staff"><h3>Seña y cancelaciones</h3>' + senaFields(n) + '</div>' + pushCard() + fidConfig(n) + sucs;
 }
 
 function sheetView() {
@@ -557,7 +753,7 @@ function sheetView() {
     if (!sh.svcs) { sh.svcs = [S.srv[0].id]; sh.dur = S.srv[0].duracion_min; sh.price = Math.round(S.srv[0].precio); sh.client = ''; }
     inner = '<h3>Nuevo turno</h3><p class="muted small">' + dlong(S.ds) + '</p>' +
       '<label>Cliente<input id="f-client" placeholder="Nombre y apellido" autocomplete="off" value="' + esc(sh.client) + '"></label>' +
-      '<label>Teléfono (opcional)<input id="f-tel" type="tel" inputmode="tel" placeholder="Para avisarle y sumar a su tarjeta" autocomplete="off"></label>' +
+      '<label>Teléfono (opcional)<input id="f-tel" type="tel" inputmode="tel" placeholder="Para avisarle y sumar a su tarjeta" autocomplete="off" value="' + esc(sh.tel || '') + '"></label>' +
       '<div class="group"><span class="lbl">Servicios (podés elegir varios)</span><div class="chips">' + S.srv.map(function (x) { return chip('sh-svc', esc(x.nombre), sh.svcs.indexOf(x.id) > -1, 'data-id="' + x.id + '"'); }).join('') + '</div></div>' +
       '<div class="two"><label>Duración total<select id="f-dur">' + durOpts(sh.dur) + '</select></label><label>Precio total ($)<input id="f-price" inputmode="numeric" value="' + sh.price + '"></label></div>' +
       '<div class="two"><label>Profesional<select id="f-mie">' + S.mie.map(function (m) { return '<option value="' + m.id + '"' + (m.id === sh.mid ? ' selected' : '') + '>' + esc(m.nombre) + '</option>'; }).join('') + '</select></label><label>Hora<select id="f-time">' + to + '</select></label></div>' +
@@ -578,11 +774,12 @@ function sheetView() {
       acts = '<p class="err" style="min-height:0"><b>¿Cancelar este turno?</b></p><div class="row"><button class="btn danger" data-act="t-cancel-yes">Sí, cancelar</button><button class="btn" data-act="t-cancel-no">No</button></div>';
     } else {
       var penSena = +a.senia_requerida > 0 && a.estado_pago === 'pendiente' && a.estado === 'reservado';
-      acts = waBlock(a) + (penSena ? '<div class="card note"><b>Seña pendiente: ' + money(a.senia_requerida) + '</b><p class="muted small">' + (a.vence_en ? 'El horario está retenido hasta las ' + hhm(utcToLocal(a.vence_en, tz).min) + '. ' : '') + (a.aviso_pago ? 'La clienta avisó que ya transfirió. ' : '') + 'Cuando veas la plata en tu cuenta, confirmala.</p><div class="row"><button class="btn primary" data-act="sena-ok">Confirmar seña recibida</button></div></div>' : '') +
+      acts = waBlock(a) + (a.cliente_id ? '<div class="row"><button class="btn" data-act="cl-open" data-v="reg" data-id="' + a.cliente_id + '" data-t="' + a.id + '">Anotar trabajo y fotos</button><button class="btn" data-act="cl-open" data-id="' + a.cliente_id + '">Ficha de la clienta</button></div>' : '') + (penSena ? '<div class="card note"><b>Seña pendiente: ' + money(a.senia_requerida) + '</b><p class="muted small">' + (a.vence_en ? 'El horario está retenido hasta las ' + hhm(utcToLocal(a.vence_en, tz).min) + '. ' : '') + (a.aviso_pago ? 'La clienta avisó que ya transfirió. ' : '') + 'Cuando veas la plata en tu cuenta, confirmala.</p><div class="row"><button class="btn primary" data-act="sena-ok">Confirmar seña recibida</button></div></div>' : '') +
         '<div class="row">' + (a.estado_pago !== 'pagado' ? '<button class="btn' + (penSena ? '' : ' primary') + '" data-act="cb-start">Cobrar' + (saldo ? ' ' + money(saldo) : '') + '</button>' : '') + '<button class="btn danger" data-act="t-cancel-ask">Cancelar turno</button><button class="btn" data-act="sheet-close">Cerrar</button></div>';
     }
     inner = '<h3>' + esc(a.cliente_nombre) + '</h3><p>' + esc(turnoNombres(a)) + ' · ' + durTxt(a.duracion_min) + ' · <b>' + money(a.precio) + '</b></p>' + lines +
       '<p class="muted">' + dlong(l.ds) + ' · ' + hhm(l.min) + ' a ' + hhm(l.min + a.duracion_min) + ' · con ' + esc(memberName(a.miembro_id)) + '</p>' +
+      (S.cli[a.cliente_id] && S.cli[a.cliente_id].alertas ? '<p class="alertline"><b>Cuidado:</b> ' + esc(S.cli[a.cliente_id].alertas) + '</p>' : '') +
       '<p><i class="dot ' + cls + '"></i><b>' + label + '</b>' + (a.origen === 'link' ? ' · reservó por el link' : '') + '</p>' + pays + acts;
   }
   return '<div class="scrim" data-scrim="1"><div class="sheet" role="dialog" aria-modal="true">' + inner + '</div></div>';
@@ -590,7 +787,7 @@ function sheetView() {
 
 
 /* ---------- finanzas ---------- */
-var CATS = { insumos: 'Insumos', alquiler: 'Alquiler', sueldos: 'Sueldos', servicios: 'Servicios (luz, internet…)', otros: 'Otros' };
+var CATS = { insumos: 'Insumos y productos', alquiler: 'Alquiler del local', sueldos: 'Sueldos y cargas sociales', servicios: 'Servicios (luz, agua, internet)', impuestos: 'Impuestos y monotributo', publicidad: 'Publicidad y redes', mantenimiento: 'Mantenimiento y arreglos', equipamiento: 'Equipamiento y muebles', comisiones: 'Comisiones y gastos bancarios', limpieza: 'Limpieza', capacitacion: 'Capacitación', otros: 'Otros' };
 var MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 function weekStart(ds) { return addDays(ds, -((dowOf(ds) + 6) % 7)); }
 function monthStart(ds) { return ds.slice(0, 8) + '01'; }
@@ -609,17 +806,29 @@ async function chunkedIn(table, col, ids) {
   for (var i = 0; i < ids.length; i += 80) out = out.concat(await run(sb.from(table).select('*').in(col, ids.slice(i, i + 80))));
   return out;
 }
+function prevRange(r) { var f = S.fin; if (f.range === 'mes') return { s: prevMonthDs(r.s), e: r.s }; var n = f.range === 'semana' ? 7 : 1; return { s: addDays(r.s, -n), e: r.s }; }
 async function loadFin() {
-  var r = finRange(), tz = TZ(), f = S.fin;
+  var r = finRange(), tz = TZ(), f = S.fin, pr = prevRange(r);
   try { await sb.rpc('liberar_vencidos'); } catch (e) { }
-  var a = zonedToUtc(r.cs, 0, tz).toISOString(), b = zonedToUtc(r.ce, 0, tz).toISOString();
+  var z = function (d) { return zonedToUtc(d, 0, tz).toISOString(); };
+  var a = z(r.cs), b = z(r.ce), rs = z(r.s), re = z(r.e);
   var res = await Promise.all([
     run(sb.from('turnos').select('*').eq('negocio_id', S.neg.id).gte('inicio', a).lt('inicio', b).neq('estado', 'cancelado').order('inicio')),
     run(sb.from('gastos').select('*').eq('negocio_id', S.neg.id).gte('fecha', r.s).lt('fecha', r.e).order('fecha', { ascending: false })),
     run(sb.from('turnos').select('*').eq('negocio_id', S.neg.id).eq('estado', 'reservado').eq('estado_pago', 'pendiente').gt('senia_requerida', 0).gt('vence_en', new Date().toISOString())),
-    run(sb.from('turnos').select('*').eq('negocio_id', S.neg.id).eq('devolucion', 'pendiente'))]);
+    run(sb.from('turnos').select('*').eq('negocio_id', S.neg.id).eq('devolucion', 'pendiente')),
+    run(sb.from('turnos').select('precio,estado,estado_pago,senia_requerida,vence_en').eq('negocio_id', S.neg.id).gte('inicio', z(pr.s)).lt('inicio', z(pr.e)).neq('estado', 'cancelado')),
+    run(sb.from('turnos').select('id,estado,estado_pago,vence_en').eq('negocio_id', S.neg.id).gte('inicio', rs).lt('inicio', re).in('estado', ['cancelado', 'ausente'])),
+    run(sb.from('clientes').select('id').eq('negocio_id', S.neg.id).gte('creado_en', rs).lt('creado_en', re))]);
   f.tur = res[0]; f.gas = res[1]; f.holds = res[2]; f.devs = res[3];
+  f.prevFact = res[4].filter(isFirm).reduce(function (x, t) { return x + (+t.precio); }, 0);
+  f.can = res[5].filter(function (t) { return !(t.estado === 'cancelado' && t.estado_pago === 'pendiente' && t.vence_en); });
+  f.cliNew = res[6].length;
   f.pag = f.tur.length ? (await chunkedIn('pagos', 'turno_id', f.tur.map(function (x) { return x.id; }))).filter(function (p) { return p.estado === 'aprobado'; }) : [];
+  var tz2 = TZ(), inIds = f.tur.filter(function (t) { if (!isFirm(t)) return false; var d = utcToLocal(t.inicio, tz2).ds; return d >= r.s && d < r.e; }).map(function (t) { return t.id; });
+  var its = inIds.length ? await chunkedIn('turno_servicios', 'turno_id', inIds) : [], agg = {};
+  its.forEach(function (x) { var o = agg[x.nombre] = agg[x.nombre] || { nombre: x.nombre, n: 0, tot: 0 }; o.n++; o.tot += +x.precio; });
+  f.top = Object.keys(agg).map(function (k) { return agg[k]; }).sort(function (x, y) { return y.tot - x.tot; });
   f.loaded = true;
 }
 function finChart(vals, labels, sel) {
@@ -637,7 +846,9 @@ function finChart(vals, labels, sel) {
 function niceMax(x) { var m = Math.pow(10, Math.floor(Math.log10(x))), f = [1, 2, 4, 6, 8, 10]; for (var i = 0; i < f.length; i++) { if (f[i] * m >= x) return f[i] * m; } return 10 * m; }
 function kfmt(n) { return n >= 1000 ? (n / 1000) + 'k' : String(n); }
 function finanzasView() {
-  var f = S.fin, head = '<div class="head"><h2>Finanzas</h2><div class="chips">' + chip('fin-range', 'Día', f.range === 'dia', 'data-v="dia"') + chip('fin-range', 'Semana', f.range === 'semana', 'data-v="semana"') + chip('fin-range', 'Mes', f.range === 'mes', 'data-v="mes"') + '</div></div>';
+  var f = S.fin, vw = f.view || 'resumen';
+  var head = '<div class="head"><h2>Finanzas</h2><div class="chips">' + chip('fin-range', 'Día', f.range === 'dia', 'data-v="dia"') + chip('fin-range', 'Semana', f.range === 'semana', 'data-v="semana"') + chip('fin-range', 'Mes', f.range === 'mes', 'data-v="mes"') + '</div></div>' +
+    '<div class="seg" role="tablist">' + [['resumen', 'Resumen'], ['cobrado', 'Cobrado'], ['gastos', 'Gastos']].map(function (x) { return '<button role="tab" data-act="fin-view" data-v="' + x[0] + '" aria-selected="' + (vw === x[0]) + '">' + x[1] + '</button>'; }).join('') + '</div>';
   if (!f.loaded) return head + '<div class="loading">Cargando números…</div>';
   var r = finRange(), tz = TZ(), today = todayDs(tz);
   var lbl = f.range === 'dia' ? dlong(r.s) : f.range === 'semana' ? 'Semana del ' + (+r.s.split('-')[2]) + ' al ' + (+addDays(r.e, -1).split('-')[2]) + ' de ' + MESES[+addDays(r.e, -1).split('-')[1] - 1].toLowerCase() : MESES[+r.s.split('-')[1] - 1] + ' ' + r.s.split('-')[0];
@@ -647,10 +858,6 @@ function finanzasView() {
   var pagBy = {}; f.pag.forEach(function (p) { pagBy[p.turno_id] = (pagBy[p.turno_id] || 0) + (+p.monto); });
   var st = function (list) { var o = { n: list.length, fact: 0, cob: 0 }; list.forEach(function (t) { o.fact += +t.precio; o.cob += Math.min(+t.precio, pagBy[t.id] || 0); }); o.por = Math.max(0, o.fact - o.cob); return o; };
   var K = st(inR);
-  var days = [], labels = [], vals = [], i, d;
-  for (d = r.cs; d < r.ce; d = addDays(d, 1)) { days.push(d); labels.push(f.range === 'mes' ? String(+d.split('-')[2]) : DOWS[dowOf(d)] + ' ' + (+d.split('-')[2])); }
-  vals = days.map(function (dd) { return firm.filter(function (t) { return dsOf(t) === dd; }).reduce(function (a, t) { return a + (+t.precio); }, 0); });
-  var sel = f.range === 'dia' ? days.indexOf(r.s) : null;
   var com = 0, comCob = 0, factAlq = 0, cobAlq = 0, alqTot = 0, sueTot = 0;
   var rows = S.mie.map(function (m) {
     var k = st(inR.filter(function (t) { return t.miembro_id === m.id; })), mod = m.modalidad || 'comision', pro, loc, nota = '';
@@ -659,32 +866,68 @@ function finanzasView() {
     else { pro = Math.round(k.fact * m.comision_pct / 100); loc = k.fact - pro; com += pro; comCob += Math.round(k.cob * m.comision_pct / 100); nota = 'Comisión ' + m.comision_pct + '%'; }
     return '<tr><td><i class="pdot c' + m.color + '"></i>' + esc(m.nombre) + '<br><small class="muted">' + nota + '</small></td><td>' + k.n + '</td><td>' + money(k.fact) + '</td><td>' + money(pro) + '</td><td>' + money(loc) + '</td></tr>';
   }).join('');
-  var porMedio = Object.keys(MEDIOS).map(function (k) {
-    var tot = f.pag.filter(function (p) { return p.medio === k && inR.some(function (t) { return t.id === p.turno_id; }); }).reduce(function (a, p) { return a + (+p.monto); }, 0);
-    return '<tr><td>' + MEDIOS[k] + '</td><td>' + money(tot) + '</td></tr>';
-  }).join('');
   var gt = f.gas.reduce(function (a, g) { return a + (+g.monto); }, 0), neta = K.fact - com - sueTot - factAlq + alqTot - gt, netaCob = K.cob - comCob - sueTot - cobAlq + alqTot - gt;
-  var sedes = '';
-  if (S.neg.tiene_sucursales && S.suc.length > 1) {
-    sedes = '<div class="card"><h3>Comparar sucursales</h3><div class="scroll"><table class="tbl"><thead><tr><th>Sede</th><th>Turnos</th><th>Factura</th><th>Cobrado</th></tr></thead><tbody>' + S.suc.map(function (sc) {
-      var k = st(inR.filter(function (t) { return t.sucursal_id === sc.id; })); return '<tr><td>' + esc(sc.nombre) + '</td><td>' + k.n + '</td><td>' + money(k.fact) + '</td><td>' + money(k.cob) + '</td></tr>';
-    }).join('') + '</tbody></table></div></div>';
+  var holdsAmt = f.holds.reduce(function (a, t) { return a + (+t.senia_requerida); }, 0), devsAmt = f.devs.reduce(function (a, t) { return a + (+t.senia_requerida); }, 0);
+  var holds = f.holds.length ? '<p class="small muted">' + f.holds.length + (f.holds.length === 1 ? ' seña' : ' señas') + ' por confirmar (' + money(holdsAmt) + '), todavía no cuentan.</p>' : '';
+  var devs = f.devs.length ? '<p class="small muted">Tenés ' + f.devs.length + (f.devs.length === 1 ? ' seña' : ' señas') + ' para devolver (' + money(devsAmt) + ').</p>' : '';
+  var body = '';
+
+  if (vw === 'resumen') {
+    var days = [], labels = [], d;
+    for (d = r.cs; d < r.ce; d = addDays(d, 1)) { days.push(d); labels.push(f.range === 'mes' ? String(+d.split('-')[2]) : DOWS[dowOf(d)] + ' ' + (+d.split('-')[2])); }
+    var vals = days.map(function (dd) { return firm.filter(function (t) { return dsOf(t) === dd; }).reduce(function (a, t) { return a + (+t.precio); }, 0); });
+    var sel = f.range === 'dia' ? days.indexOf(r.s) : null;
+    var dl = f.prevFact > 0 ? Math.round((K.fact - f.prevFact) / f.prevFact * 100) : null, pl = f.range === 'dia' ? 'ayer' : f.range === 'semana' ? 'la semana anterior' : 'el mes anterior';
+    var cmp = dl === null ? '<small class="delta">Sin datos del período anterior</small>' : '<small class="delta ' + (dl >= 0 ? 'good' : 'bad') + '">' + (dl >= 0 ? '▲ ' : '▼ ') + Math.abs(dl) + '% vs ' + pl + '</small>';
+    var tk = K.n ? Math.round(K.fact / K.n) : 0, canN = f.can.length, canP = (canN + K.n) ? Math.round(canN / (canN + K.n) * 100) : 0;
+    var kp = '<div class="kpis"><div class="kpi"><small>Facturación</small><b>' + money(K.fact) + '</b>' + cmp + '</div><div class="kpi"><small>Ya cobrado</small><b class="good">' + money(K.cob) + '</b></div><div class="kpi"><small>Por cobrar</small><b>' + money(K.por) + '</b></div><div class="kpi"><small>Turnos</small><b>' + K.n + '</b></div><div class="kpi"><small>Ticket promedio</small><b>' + money(tk) + '</b></div><div class="kpi kpi-net"><small>Ganancia neta</small><b class="' + (neta >= 0 ? 'good' : 'bad') + '">' + money(neta) + '</b></div></div>';
+    var topMax = f.top.length ? f.top[0].tot : 1;
+    var top = f.top.length ? '<div class="card"><h3>Servicios que más facturan</h3>' + f.top.slice(0, 5).map(function (x) { return '<div class="hbar"><div class="hl"><span>' + esc(x.nombre) + ' <small class="muted">' + x.n + (x.n === 1 ? ' vez' : ' veces') + '</small></span><b>' + money(x.tot) + '</b></div><div class="hb"><i style="width:' + Math.max(4, Math.round(x.tot / topMax * 100)) + '%"></i></div></div>'; }).join('') + '</div>' : '';
+    var dowc = [0, 0, 0, 0, 0, 0, 0], hrc = {};
+    inR.forEach(function (t) { var l = utcToLocal(t.inicio, tz); dowc[dowOf(l.ds)]++; var hh = Math.floor(l.min / 60); hrc[hh] = (hrc[hh] || 0) + 1; });
+    var dmax = Math.max.apply(null, dowc.concat([1])), ord = [1, 2, 3, 4, 5, 6, 0], tops = Object.keys(hrc).sort(function (x, y) { return hrc[y] - hrc[x]; }).slice(0, 3);
+    var rhythm = (f.range !== 'dia' && K.n) ? '<div class="card"><h3>Cuándo se llena tu agenda</h3><div class="bars2">' + ord.map(function (dw) { return '<div><b>' + dowc[dw] + '</b><i style="height:' + Math.max(3, Math.round(dowc[dw] / dmax * 70)) + 'px"></i><span>' + DOWS[dw] + '</span></div>'; }).join('') + '</div>' + (tops.length ? '<p class="muted small" style="margin:10px 0 0">Horarios más pedidos: <b>' + tops.map(function (x) { return x + ':00'; }).join(', ') + '</b></p>' : '') + '</div>' : (K.n && tops.length ? '<div class="card"><h3>Horarios del día</h3><p class="muted small" style="margin:0">Más turnos a las <b>' + tops.map(function (x) { return x + ':00'; }).join(', ') + '</b>.</p></div>' : '');
+    var health = '<div class="card"><h3>Salud del negocio</h3><div class="tbl2"><div><span>Clientas nuevas</span><b>' + f.cliNew + '</b></div><div><span>Cancelaciones y ausencias</span><b>' + canN + (canN + K.n ? ' (' + canP + '%)' : '') + '</b></div><div><span>Gastos del período</span><b>' + money(gt) + (K.fact ? ' (' + Math.round(gt / K.fact * 100) + '% de lo facturado)' : '') + '</b></div><div><span>Ganancia neta cobrada</span><b class="' + (netaCob >= 0 ? 'good' : 'bad') + '">' + money(netaCob) + '</b></div></div>' + holds + devs + '</div>';
+    var sedes = '';
+    if (S.neg.tiene_sucursales && S.suc.length > 1) {
+      sedes = '<div class="card"><h3>Comparar sucursales</h3><div class="scroll"><table class="tbl"><thead><tr><th>Sede</th><th>Turnos</th><th>Factura</th><th>Cobrado</th></tr></thead><tbody>' + S.suc.map(function (sc) {
+        var k = st(inR.filter(function (t) { return t.sucursal_id === sc.id; })); return '<tr><td>' + esc(sc.nombre) + '</td><td>' + k.n + '</td><td>' + money(k.fact) + '</td><td>' + money(k.cob) + '</td></tr>';
+      }).join('') + '</tbody></table></div></div>';
+    }
+    var out = '<div class="card staff"><h3>Cómo se calcula tu ganancia neta</h3><div class="scroll"><table class="tbl"><tbody>' +
+      '<tr><td>Facturación</td><td>' + money(K.fact) + '</td></tr>' + (com ? '<tr><td>Comisiones del equipo</td><td>− ' + money(com) + '</td></tr>' : '') + (sueTot ? '<tr><td>Sueldos fijos</td><td>− ' + money(sueTot) + '</td></tr>' : '') + (factAlq ? '<tr><td>Facturado por quienes alquilan <small class="muted">es de ellos</small></td><td>− ' + money(factAlq) + '</td></tr><tr><td>Alquileres cobrados</td><td>+ ' + money(alqTot) + '</td></tr>' : '') +
+      '<tr><td>Gastos <small class="muted"><button class="chip" data-act="fin-view" data-v="gastos">ver detalle</button></small></td><td>− ' + money(gt) + '</td></tr>' +
+      '<tr><td><b>Ganancia neta</b> <small class="muted">sobre lo facturado</small></td><td><span class="res ' + (neta >= 0 ? 'good' : 'bad') + '">' + money(neta) + '</span></td></tr>' +
+      '<tr><td><b>Ganancia neta cobrada</b> <small class="muted">solo lo que ya entró</small></td><td><span class="res ' + (netaCob >= 0 ? 'good' : 'bad') + '">' + money(netaCob) + '</span></td></tr></tbody></table></div></div>';
+    body = kp + '<div class="card"><h3>Facturación por día</h3>' + finChart(vals, labels, sel) + '</div>' + top + rhythm + health +
+      '<div class="card"><h3>Por profesional</h3><div class="scroll"><table class="tbl"><thead><tr><th>Nombre</th><th>Turnos</th><th>Factura</th><th>Para el profesional</th><th>Para el local</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>' + sedes + out;
+  } else if (vw === 'cobrado') {
+    var porMedio = Object.keys(MEDIOS).map(function (k) {
+      var tot = f.pag.filter(function (p) { return p.medio === k && inR.some(function (t) { return t.id === p.turno_id; }); }).reduce(function (a, p) { return a + (+p.monto); }, 0);
+      return { k: k, tot: tot };
+    });
+    var totCob = porMedio.reduce(function (a, x) { return a + x.tot; }, 0);
+    var kp2 = '<div class="kpis"><div class="kpi"><small>Cobrado</small><b class="good">' + money(totCob) + '</b></div><div class="kpi"><small>Por cobrar</small><b>' + money(K.por) + '</b></div><div class="kpi"><small>Señas por confirmar</small><b>' + money(holdsAmt) + '</b></div><div class="kpi"><small>Señas a devolver</small><b>' + money(devsAmt) + '</b></div></div>';
+    var medH = '<div class="card"><h3>Cómo cobraste</h3>' + porMedio.map(function (x) { var pc = totCob ? Math.round(x.tot / totCob * 100) : 0; return '<div class="hbar"><div class="hl"><span>' + MEDIOS[x.k] + ' <small class="muted">' + pc + '%</small></span><b>' + money(x.tot) + '</b></div><div class="hb"><i style="width:' + (x.tot ? Math.max(4, pc) : 0) + '%"></i></div></div>'; }).join('') + holds + devs + '</div>';
+    var nameBy = {}; f.tur.forEach(function (t) { nameBy[t.id] = t; });
+    var pagos = f.pag.filter(function (p) { return nameBy[p.turno_id] && inR.some(function (t) { return t.id === p.turno_id; }); }).sort(function (x, y) { return (y.creado_en || '') < (x.creado_en || '') ? -1 : 1; });
+    var plist = pagos.length ? '<div class="card"><h3>Cobros del período (' + pagos.length + ')</h3>' + pagos.map(function (p) { var t = nameBy[p.turno_id], l = utcToLocal(t.inicio, tz); return '<div class="alrow"><span><b>' + esc(t.cliente_nombre) + '</b><br><small>' + esc(MEDIOS[p.medio] || p.medio) + (p.tipo === 'sena' ? ' · seña' : '') + ' · turno ' + dlabel(l.ds) + ' ' + hhm(l.min) + '</small></span><b>' + money(p.monto) + '</b></div>'; }).join('') + '</div>' : '<div class="card"><h3>Cobros del período</h3><p class="muted">Todavía no hay cobros en este período.</p></div>';
+    var pendL = inR.filter(function (t) { return +t.precio - (pagBy[t.id] || 0) > 0; });
+    var pendH = pendL.length ? '<div class="card"><h3>Pendiente de cobro (' + pendL.length + ')</h3>' + pendL.map(function (t) { var l = utcToLocal(t.inicio, tz); return '<div class="alrow"><span><b>' + esc(t.cliente_nombre) + '</b><br><small>' + dlabel(l.ds) + ' ' + hhm(l.min) + '</small></span><b>' + money(Math.round(+t.precio - (pagBy[t.id] || 0))) + '</b></div>'; }).join('') + '</div>' : '';
+    body = kp2 + medH + plist + pendH;
+  } else {
+    var byCat = Object.keys(CATS).map(function (k) { return [k, f.gas.filter(function (g) { return (g.categoria || 'otros') === k; }).reduce(function (a, g) { return a + (+g.monto); }, 0)]; }).filter(function (x) { return x[1] > 0; }).sort(function (x, y) { return y[1] - x[1]; });
+    var defF = (today >= r.s && today < r.e) ? today : r.s;
+    var form = '<div class="card staff"><h3>Cargar un gasto</h3><label>Concepto<input id="g-d" placeholder="Ej: Esmaltes y limas" autocomplete="off"></label>' +
+      '<div class="two"><label>Monto ($)<input id="g-a" inputmode="numeric" placeholder="15000"></label><label>Fecha<input id="g-f" type="date" value="' + defF + '"></label></div>' +
+      '<label>Categoría<select id="g-c">' + Object.keys(CATS).map(function (k) { return '<option value="' + k + '">' + CATS[k] + '</option>'; }).join('') + '</select></label>' +
+      '<p class="err" id="g-err" role="alert"></p><div class="row"><button class="btn primary" data-act="g-add">Agregar gasto</button></div></div>';
+    var kp3 = '<div class="kpis"><div class="kpi"><small>Gastos del período</small><b>' + money(gt) + '</b></div><div class="kpi"><small>% de lo facturado</small><b>' + (K.fact ? Math.round(gt / K.fact * 100) + '%' : '—') + '</b></div></div>';
+    var catH = byCat.length ? '<div class="card"><h3>En qué se va la plata</h3>' + byCat.map(function (x) { return '<div class="hbar"><div class="hl"><span>' + CATS[x[0]] + ' <small class="muted">' + Math.round(x[1] / gt * 100) + '%</small></span><b>' + money(x[1]) + '</b></div><div class="hb"><i style="width:' + Math.max(4, Math.round(x[1] / byCat[0][1] * 100)) + '%"></i></div></div>'; }).join('') + '</div>' : '';
+    var gl = f.gas.length ? '<div class="card"><h3>Gastos cargados (' + f.gas.length + ')</h3>' + f.gas.map(function (g) { return '<div class="alrow"><span><b>' + esc(g.concepto) + '</b><br><small>' + esc(CATS[g.categoria] || 'Otros') + ' · ' + dlabel(g.fecha) + '</small></span><span class="btns"><b>− ' + money(g.monto) + '</b><button class="chip" data-act="g-del" data-id="' + g.id + '" aria-label="Eliminar gasto">×</button></span></div>'; }).join('') + '</div>' : '<div class="card"><h3>Gastos cargados</h3><p class="muted">No cargaste gastos en este período.</p></div>';
+    body = kp3 + form + catH + gl;
   }
-  var holds = f.holds.length ? '<p class="small muted">' + f.holds.length + (f.holds.length === 1 ? ' seña' : ' señas') + ' por confirmar (' + money(f.holds.reduce(function (a, t) { return a + (+t.senia_requerida); }, 0)) + '), todavía no cuentan.</p>' : '';
-  var devs = f.devs.length ? '<p class="small muted">Tenés ' + f.devs.length + (f.devs.length === 1 ? ' seña' : ' señas') + ' para devolver (' + money(f.devs.reduce(function (a, t) { return a + (+t.senia_requerida); }, 0)) + ').</p>' : '';
-  var kp = '<div class="kpis"><div class="kpi"><small>Facturación</small><b>' + money(K.fact) + '</b></div><div class="kpi"><small>Ya cobrado</small><b class="good">' + money(K.cob) + '</b></div><div class="kpi"><small>Por cobrar</small><b>' + money(K.por) + '</b></div><div class="kpi"><small>Turnos</small><b>' + K.n + '</b></div><div class="kpi kpi-net"><small>Ganancia neta</small><b class="' + (neta >= 0 ? 'good' : 'bad') + '">' + money(neta) + '</b></div></div>';
-  var gl = f.gas.map(function (g) { return '<tr><td>' + esc(g.concepto) + ' <small class="muted">' + esc(CATS[g.categoria] || 'Otros') + ' · ' + dlabel(g.fecha) + '</small></td><td>− ' + money(g.monto) + '</td><td><button class="chip" data-act="g-del" data-id="' + g.id + '" aria-label="Eliminar gasto">×</button></td></tr>'; }).join('');
-  var byCat = Object.keys(CATS).map(function (k) { return [k, f.gas.filter(function (g) { return (g.categoria || 'otros') === k; }).reduce(function (a, g) { return a + (+g.monto); }, 0)]; }).filter(function (x) { return x[1] > 0; });
-  var catHtml = byCat.length ? '<h4>En qué se va la plata</h4><div class="scroll"><table class="tbl"><tbody>' + byCat.map(function (x) { return '<tr><td>' + CATS[x[0]] + '</td><td>' + money(x[1]) + '</td><td class="muted">' + Math.round(x[1] / gt * 100) + '%</td></tr>'; }).join('') + '</tbody></table></div>' : '';
-  var out = '<div class="card staff"><h3>Ganancia neta ' + (f.range === 'dia' ? 'del día' : f.range === 'semana' ? 'de la semana' : 'del mes') + '</h3><div class="scroll"><table class="tbl"><tbody>' +
-    '<tr><td>Facturación</td><td>' + money(K.fact) + '</td><td></td></tr>' + (com ? '<tr><td>Comisiones del equipo</td><td>− ' + money(com) + '</td><td></td></tr>' : '') + (sueTot ? '<tr><td>Sueldos fijos</td><td>− ' + money(sueTot) + '</td><td></td></tr>' : '') + (factAlq ? '<tr><td>Facturado por quienes alquilan <small class="muted">es de ellos</small></td><td>− ' + money(factAlq) + '</td><td></td></tr><tr><td>Alquileres cobrados</td><td>+ ' + money(alqTot) + '</td><td></td></tr>' : '') + gl +
-    '<tr><td><b>Ganancia neta</b> <small class="muted">sobre lo facturado</small></td><td><span class="res ' + (neta >= 0 ? 'good' : 'bad') + '">' + money(neta) + '</span></td><td></td></tr>' +
-    '<tr><td><b>Ganancia neta cobrada</b> <small class="muted">solo con lo que ya entró</small></td><td><span class="res ' + (netaCob >= 0 ? 'good' : 'bad') + '">' + money(netaCob) + '</span></td><td></td></tr></tbody></table></div>' + catHtml +
-    '<h4>Cargar un gasto</h4><div class="two" style="grid-template-columns:2fr 1fr;align-items:end"><label>Concepto<input id="g-d" placeholder="Ej: Esmaltes y limas" autocomplete="off"></label><label>Monto<input id="g-a" inputmode="numeric" placeholder="15000"></label></div>' +
-    '<div class="two" style="grid-template-columns:2fr auto;align-items:end"><label>Categoría<select id="g-c">' + Object.keys(CATS).map(function (k) { return '<option value="' + k + '">' + CATS[k] + '</option>'; }).join('') + '</select></label><button class="btn primary" data-act="g-add">Agregar</button></div><p class="err" id="g-err" role="alert"></p></div>';
-  return head + nav + kp + '<div class="card"><h3>Facturación por día</h3>' + finChart(vals, labels, sel) + '</div>' +
-    '<div class="card"><h3>Por profesional</h3><div class="scroll"><table class="tbl"><thead><tr><th>Nombre</th><th>Turnos</th><th>Factura</th><th>Para el profesional</th><th>Para el local</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>' +
-    '<div class="card"><h3>Cómo cobraste</h3><div class="scroll"><table class="tbl"><tbody>' + porMedio + '<tr><td>Por cobrar</td><td>' + money(K.por) + '</td></tr></tbody></table></div>' + holds + devs + '</div>' + sedes + out;
+  return head + nav + body;
 }
 
 /* ---------- vistas: reserva pública ---------- */
@@ -936,7 +1179,7 @@ document.addEventListener('click', async function (e) {
       case 'ob-back': S.ob.step = Math.max(0, S.ob.step - 1); break;
       case 'ob-skip': case 'ob-finish':
         await run(sb.from('negocios').update({ onboarding_listo: true }).eq('id', S.neg.id)); S.neg.onboarding_listo = true;
-        S.route = 'app'; S.tab = 'agenda'; S.ds = todayDs(TZ()); S.win = 0; await loadTur();
+        S.route = 'app'; S.tab = 'inicio'; S.ds = todayDs(TZ()); S.win = 0; await loadHome();
         if (act === 'ob-finish') toast('¡Listo! Tu negocio está configurado.'); break;
       case 'ob-sug': {
         var sg = RUBROS[S.neg.rubro].servicios[+t.dataset.i];
@@ -953,9 +1196,49 @@ document.addEventListener('click', async function (e) {
       }
       case 'ob-svc-del': await run(sb.from('servicios').delete().eq('id', id)); await loadAll(S.neg.id); break;
       case 'ob-guia': S.ob = { step: 1 }; S.route = 'onb'; break;
+      case 'push-on': await pushOn(); break;
+      case 'push-off': await pushOff(); break;
+      case 'push-test': await pushTest(); break;
+      case 'push-later': try { localStorage.setItem('turnia-push-later', '1'); } catch (x) { } break;
+      case 'cl-open': S.sheet = null; S.tab = 'clientas'; S.fx = { id: id, c: null, tur: [], items: {}, reg: [], urls: {}, form: null }; render(); await loadFicha(id, v === 'reg' ? (t.dataset.t || true) : false); break;
+      case 'cl-back': S.fx = null; render(); await loadClientas(); break;
+      case 'rg-new': fxSnap(); fichaOpenForm(v || null); break;
+      case 'rg-cancel': (S.fx.form || {}).files && S.fx.form.files.forEach(function (x) { try { URL.revokeObjectURL(x.prev); } catch (e) { } }); S.fx.form = null; break;
+      case 'rg-rmf': fxSnap(); S.fx.form.files.splice(+v, 1); break;
+      case 'rg-del': S.fx.delRg = id; break;
+      case 'rg-del-no': S.fx.delRg = null; break;
+      case 'rg-del-yes': {
+        var gdel = S.fx.reg.filter(function (x) { return x.id === id; })[0];
+        if (gdel && (gdel.fotos || []).length) { try { await sb.storage.from('fichas').remove(gdel.fotos); } catch (e) { } }
+        await run(sb.from('cliente_registros').delete().eq('id', id)); await loadFicha(S.fx.id); toast('Registro eliminado'); break;
+      }
+      case 'rg-save': {
+        fxSnap(); var fxs = S.fx, fm = fxs.form, hasC = Object.keys(fm.campos).some(function (k) { return String(fm.campos[k] || '').trim(); });
+        if (!fm.texto.trim() && !hasC && !fm.files.length) { fm.err = 'Escribí algo o agregá una foto para guardar.'; break; }
+        fxs.busy = true; fm.err = ''; render();
+        var up = [];
+        try {
+          for (var i = 0; i < fm.files.length; i++) {
+            var pth = S.neg.id + '/' + fxs.id + '/' + Date.now() + '-' + i + '.jpg';
+            var ur = await sb.storage.from('fichas').upload(pth, fm.files[i].blob, { contentType: 'image/jpeg' });
+            if (ur.error) throw ur.error; up.push(pth);
+          }
+          var cp = {}; Object.keys(fm.campos).forEach(function (k) { var vv = String(fm.campos[k] || '').trim(); if (vv) cp[k] = vv.slice(0, 200); });
+          await run(sb.from('cliente_registros').insert({ negocio_id: S.neg.id, cliente_id: fxs.id, turno_id: fm.turno_id || null, texto: fm.texto.trim() || null, campos: cp, fotos: up }));
+        } catch (er) {
+          if (up.length) { try { await sb.storage.from('fichas').remove(up); } catch (e2) { } }
+          fxs.busy = false; fm.err = errMsg(er); break;
+        }
+        fm.files.forEach(function (x) { try { URL.revokeObjectURL(x.prev); } catch (e) { } });
+        S.fx.form = null; await loadFicha(fxs.id); toast('Registro guardado'); break;
+      }
+      case 'ph-open': S.ph = v; break;
+      case 'ph-close': S.ph = null; break;
       case 'fid-toggle': await run(sb.from('negocios').update({ fid_activa: !S.neg.fid_activa }).eq('id', S.neg.id)); await loadAll(S.neg.id); break;
       case 'cq-clear': S.cq = ''; break;
-      case 'tab': if (v === 'clientas') { S.tab = v; S.acct = false; S.sheet = null; render(); await loadClientas(); break; } S.tab = v; S.acct = false; S.sheet = null; if (v === 'finanzas') { S.fin.loaded = false; render(); await loadFin(); } break;
+      case 'tab': if (v === 'inicio') { S.tab = v; S.acct = false; S.sheet = null; render(); await loadHome(); break; }
+        if (v === 'clientas') { S.tab = v; S.fx = null; S.acct = false; S.sheet = null; render(); await loadClientas(); break; } S.tab = v; S.acct = false; S.sheet = null; if (v === 'finanzas') { S.fin.loaded = false; render(); await loadFin(); } break;
+      case 'fin-view': S.fin.view = v; break;
       case 'fin-range': S.fin.range = v; S.fin.loaded = false; render(); await loadFin(); break;
       case 'fin-hoy': S.fin.ref = null; S.fin.loaded = false; render(); await loadFin(); break;
       case 'fin-nav': {
@@ -966,8 +1249,11 @@ document.addEventListener('click', async function (e) {
       case 'g-add': {
         var gd = $('#g-d').value.trim(), ga = parseInt($('#g-a').value.replace(/\D/g, ''), 10), ge2 = $('#g-err');
         if (!gd || isNaN(ga)) { ge2.textContent = 'Escribí el concepto y el monto en números.'; return; }
-        var rg = finRange(), fecha = (S.fin.range === 'dia' ? rg.s : (todayDs(TZ()) >= rg.s && todayDs(TZ()) < rg.e ? todayDs(TZ()) : rg.s));
-        await run(sb.from('gastos').insert({ negocio_id: S.neg.id, concepto: gd, monto: ga, fecha: fecha, categoria: $('#g-c').value })); await loadFin(); toast('Gasto agregado'); break;
+        var rg = finRange(), fecha = ($('#g-f') && $('#g-f').value) || rg.s;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) { ge2.textContent = 'Elegí una fecha válida.'; return; }
+        await run(sb.from('gastos').insert({ negocio_id: S.neg.id, concepto: gd, monto: ga, fecha: fecha, categoria: $('#g-c').value }));
+        if (fecha < rg.s || fecha >= rg.e) { S.fin.ref = fecha; S.fin.loaded = false; render(); }
+        await loadFin(); toast('Gasto agregado'); break;
       }
       case 'g-del': await run(sb.from('gastos').delete().eq('id', id)); await loadFin(); toast('Gasto eliminado'); break;
       case 'acct': S.acct = !S.acct; break;
@@ -977,7 +1263,7 @@ document.addEventListener('click', async function (e) {
       case 'appt': S.sheet = { type: 'detail', id: v }; break;
       case 'sheet-close': S.sheet = null; break;
       case 'sh-svc': {
-        var shn = S.sheet; shn.client = $('#f-client').value; shn.mid = $('#f-mie').value; shn.min = +$('#f-time').value;
+        var shn = S.sheet; shn.client = $('#f-client').value; shn.tel = $('#f-tel').value; shn.mid = $('#f-mie').value; shn.min = +$('#f-time').value;
         var ii = shn.svcs.indexOf(id); if (ii > -1) { if (shn.svcs.length > 1) shn.svcs.splice(ii, 1); } else shn.svcs.push(id);
         var chosen = shn.svcs.map(svcOf); shn.dur = chosen.reduce(function (a, x) { return a + x.duracion_min; }, 0); shn.price = Math.round(chosen.reduce(function (a, x) { return a + (+x.precio); }, 0));
         break;
@@ -1036,16 +1322,16 @@ document.addEventListener('click', async function (e) {
         S.sheet = { type: 'detail', id: ts.id }; await loadTur(); toast('Seña confirmada. Ahora podés avisarle por WhatsApp.'); break;
       }
       case 'wa': case 'wa-dev': {
-        var wt = findTurno(act === 'wa' ? S.sheet.id : id), kind = act === 'wa' ? v : 'dev', wc = wt && S.cli[wt.cliente_id], ph = wc ? waPhone(wc.telefono) : '';
+        var wt = findTurno(act === 'wa' ? (id || S.sheet.id) : id), kind = act === 'wa' ? v : 'dev', wc = wt && S.cli[wt.cliente_id], ph = wc ? waPhone(wc.telefono) : '';
         if (!ph) { toast('Esta clienta no tiene teléfono cargado'); break; }
         window.open('https://wa.me/' + ph + '?text=' + encodeURIComponent(waMsg(wt, kind)), '_blank', 'noopener');
-        if (kind !== 'dev') { var up = {}; up[kind === 'rec' ? 'aviso_rec_en' : 'aviso_conf_en'] = new Date().toISOString(); if (kind === 'rec' && !wt.aviso_conf_en) up.aviso_conf_en = up.aviso_rec_en; await run(sb.from('turnos').update(up).eq('id', wt.id)); var keep = S.sheet; await loadTur(); S.sheet = keep; toast('Marcado como avisado'); }
+        if (kind !== 'dev') { var up = {}; up[kind === 'rec' ? 'aviso_rec_en' : 'aviso_conf_en'] = new Date().toISOString(); if (kind === 'rec' && !wt.aviso_conf_en) up.aviso_conf_en = up.aviso_rec_en; await run(sb.from('turnos').update(up).eq('id', wt.id)); var keep = S.sheet; if (S.tab === 'inicio') await loadHome(); else await loadTur(); S.sheet = keep; toast('Marcado como avisado'); }
         break;
       }
       case 'dev-ok': {
         await run(sb.from('pagos').update({ estado: 'reintegrado' }).eq('turno_id', id).eq('estado', 'aprobado'));
         await run(sb.from('turnos').update({ devolucion: 'hecha' }).eq('id', id));
-        await loadTur(); toast('Devolución registrada'); break;
+        if (S.tab === 'inicio') await loadHome(); else await loadTur(); toast('Devolución registrada'); break;
       }
       case 'm-add': {
         var n = S.mie.length;
@@ -1128,6 +1414,13 @@ document.addEventListener('click', async function (e) {
 });
 
 document.addEventListener('change', async function (e) {
+  if (e.target.id === 'rg-files' && S.fx && S.fx.form) {
+    var fl = Array.prototype.slice.call(e.target.files || []); fxSnap();
+    try {
+      for (var q = 0; q < fl.length && S.fx.form.files.length < 8; q++) { var bl = await resizeImg(fl[q], 1280, 'image/jpeg', 0.82); S.fx.form.files.push({ blob: bl, prev: URL.createObjectURL(bl) }); }
+    } catch (er) { S.fx.form.err = errMsg(er); }
+    render(); return;
+  }
   if (e.target.id === 'p-tel' && S.pb && S.P) {
     var b0 = S.pb; b0.tel = e.target.value; b0.fid = null;
     if (S.P.negocio.fid_activa && b0.tel.replace(/\D/g, '').length >= 8) { try { b0.fid = await run(sb.rpc('fidelidad_preview', { p_slug: S.P.negocio.slug, p_telefono: b0.tel })); } catch (x) { } }
@@ -1173,6 +1466,7 @@ document.addEventListener('change', async function (e) {
     else if (k === 'n-cancel') { await run(sb.from('negocios').update({ cancel_horas: +v }).eq('id', S.neg.id)); await loadAll(S.neg.id); }
     else if (k === 'n-fidcada') { var fc = Math.round(+v); if (isNaN(fc) || fc < 2 || fc > 20) { toast('Tiene que ser entre 2 y 20 turnos'); render(); return; } await run(sb.from('negocios').update({ fid_cada: fc }).eq('id', S.neg.id)); await loadAll(S.neg.id); }
     else if (k === 'n-fidpct') { var fp2 = Math.round(+v); if (isNaN(fp2) || fp2 < 1 || fp2 > 100) { toast('El descuento tiene que ser entre 1 y 100%'); render(); return; } await run(sb.from('negocios').update({ fid_pct: fp2 }).eq('id', S.neg.id)); await loadAll(S.neg.id); }
+    else if (k === 'c-alert') { await run(sb.from('clientes').update({ alertas: String(v).trim().slice(0, 600) || null }).eq('id', id)); if (S.cli && S.cli[id]) S.cli[id].alertas = String(v).trim() || null; if (S.fx && S.fx.c) S.fx.c.alertas = String(v).trim() || null; toast('Guardado'); return; }
     else if (k === 'c-dni') { await run(sb.from('clientes').update({ dni: String(v).replace(/[^0-9.]/g, '').slice(0, 15) || null }).eq('id', id)); toast('DNI guardado'); return; }
     else if (k === 'n-sena') { var sp = Math.round(+String(v).replace(',', '.')); if (isNaN(sp) || sp < 0 || sp > 100) { toast('La seña tiene que ser entre 0 y 100%'); render(); return; } await run(sb.from('negocios').update({ sena_pct: sp }).eq('id', S.neg.id)); await loadAll(S.neg.id); }
     else if (k === 'suc-n') { var sx = v.trim(); if (sx.length < 2) { toast('El nombre es muy corto'); render(); return; } await run(sb.from('sucursales').update({ nombre: sx }).eq('id', id)); await loadAll(S.neg.id); }
@@ -1200,5 +1494,6 @@ async function boot() {
   } catch (e) { fail(e); S.route = 'welcome'; render(); }
 }
 document.addEventListener('input', function (e) { var t = e.target; if (S.pb && t && (t.id === 'p-name' || t.id === 'p-tel')) S.pb[t.id === 'p-name' ? 'name' : 'tel'] = t.value; });
+try { if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) { navigator.serviceWorker.register('sw.js').catch(function () { }); navigator.serviceWorker.addEventListener('message', function (e) { if (e.data && e.data.abrir) openTurno(e.data.abrir); }); } } catch (e) { }
 boot();
 })();

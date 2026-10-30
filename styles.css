@@ -113,19 +113,19 @@ input,select{font:inherit;color:var(--fg);background:var(--bg);border:1px solid 
 .top select{width:auto;padding:8px 10px;font-weight:700}
 .acct{position:absolute;right:0;top:100%;z-index:20;width:min(300px,100%);display:grid;gap:12px;box-shadow:0 12px 30px rgba(0,0,0,.18)}
 .ico{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
-.shell{display:grid;gap:16px}
+.shell{display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}
 .nav{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;background:var(--surface);border-top:1px solid var(--line);
   padding:6px max(10px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(10px,env(safe-area-inset-left,0px))}
 .nav button{flex:1;display:grid;justify-items:center;gap:2px;border:0;background:none;padding:6px 4px;font-size:12px;font-weight:700;color:var(--muted);border-radius:10px}
 .nav button[aria-current="page"]{color:var(--accent)}
-main{display:grid;gap:16px;min-width:0;align-content:start}
+main{display:grid;gap:16px;min-width:0;align-content:start;grid-template-columns:minmax(0,1fr)}
 .head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;background:var(--muted)}
 .dot.pagado{background:var(--good)} .dot.seña{background:var(--warn)} .dot.pendiente{background:var(--bad)}
 @media (min-width:900px){
   body{padding-block:20px 40px}
-  .shell{grid-template-columns:190px 1fr;gap:28px}
+  .shell{grid-template-columns:190px minmax(0,1fr);gap:28px}
   .nav{position:sticky;top:16px;flex-direction:column;border:1px solid var(--line);border-radius:14px;padding:8px;align-self:start}
   .nav button{grid-auto-flow:column;justify-content:start;gap:10px;font-size:14px;padding:10px 12px}
 }
@@ -300,3 +300,51 @@ a.btn.primary{color:var(--on-accent)}
 .fmini small{margin-left:6px;color:var(--muted)}
 @media (prefers-reduced-motion:reduce){.fslot.new .stamp,.fslot.new::after,.fslot.next{animation:none}}
 .lines b{white-space:nowrap}
+
+/* ---------- inicio y finanzas ---------- */
+.seg{display:flex;gap:4px;padding:4px;background:var(--surface2);border-radius:14px;margin:0 0 12px}
+.seg button{flex:1;border:0;background:transparent;color:var(--muted);font:700 14px var(--font-b);padding:9px 6px;border-radius:10px;cursor:pointer}
+.seg button[aria-selected=true]{background:var(--surface);color:var(--accent);box-shadow:0 1px 4px rgba(0,0,0,.12)}
+.occ{height:10px;border-radius:999px;background:var(--surface2);overflow:hidden;margin-top:8px}
+.occ i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--p2))}
+.btns{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.delta{display:block;margin-top:2px;font-weight:700;font-size:12px;color:var(--muted)}
+.delta.good{color:var(--good)}.delta.bad{color:var(--bad)}
+.hbar{margin:10px 0}
+.hbar .hl{display:flex;justify-content:space-between;gap:10px;font-size:14px}
+.hbar .hb{height:8px;border-radius:999px;background:var(--surface2);margin-top:5px;overflow:hidden}
+.hbar .hb i{display:block;height:100%;border-radius:999px;background:var(--accent)}
+.bars2{display:flex;align-items:flex-end;gap:8px;height:110px;padding-top:6px}
+.bars2>div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;height:100%}
+.bars2 i{display:block;width:100%;max-width:34px;border-radius:7px 7px 3px 3px;background:var(--accent)}
+.bars2 b{font-size:12px}.bars2 span{font-size:11px;color:var(--muted)}
+.tbl2>div{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid var(--line);font-size:14px}
+.tbl2>div:first-child{border-top:0}
+.tbl2 b{text-align:right}
+.top2{gap:10px;flex-wrap:wrap}
+
+/* ---------- ficha de la clienta ---------- */
+textarea{width:100%;font:inherit;color:inherit;background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;resize:vertical;min-height:64px}
+textarea:focus{outline:2px solid var(--accent);outline-offset:1px}
+.kpis3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.kpi b.sm{font-size:16px}
+.alertline{margin:8px 0;padding:8px 10px;border-radius:10px;background:color-mix(in srgb,var(--warn) 14%,var(--surface));border:1px solid color-mix(in srgb,var(--warn) 40%,transparent);font-size:14px}
+.visit{padding:12px 0;border-top:1px solid var(--line)}
+.visit:first-of-type{border-top:0}
+.visit .vh{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.visit .vs{margin:4px 0 8px;color:var(--muted);font-size:14px}
+.tag.fut{background:var(--accent-soft);color:var(--accent)}
+.reg{margin:8px 0 4px;padding:10px 12px;border-radius:14px;background:var(--surface2)}
+.reg-h{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.kv{display:grid;gap:4px;margin:8px 0}
+.kv>div{display:flex;justify-content:space-between;gap:12px;font-size:14px}
+.kv span{color:var(--muted)}.kv b{text-align:right}
+.rtext{margin:6px 0 0;white-space:normal;font-size:15px}
+.thumbs{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.thumb{position:relative;width:76px;height:76px;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:var(--surface);padding:0;display:grid;place-items:center;cursor:pointer}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb.add{border:2px dashed var(--line);color:var(--accent);font-size:28px;font-weight:700}
+.thumb .x{position:absolute;top:3px;right:3px;width:22px;height:22px;border-radius:50%;border:0;background:rgba(0,0,0,.65);color:#fff;font-size:15px;line-height:1;cursor:pointer}
+.lightbox{position:fixed;inset:0;z-index:80;background:rgba(10,8,12,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:16px}
+.lightbox img{max-width:100%;max-height:78vh;border-radius:12px;object-fit:contain}
+.kpis3 .kpi b{font-size:18px;line-height:1.2}
